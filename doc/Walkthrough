@@ -1,0 +1,64 @@
+# Walkthrough: Ditto Synthetic Matchmaking Feedback Loop Simulator
+
+## What Was Built
+
+A complete multi-agent simulation system that generates synthetic matchmaking conversations, following the [project roadmap](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/doc/Synthetic_Conversation_Generator_Project_Roadmap.md).
+
+### Components Implemented (16 files)
+
+| Component | Files | Purpose |
+|-----------|-------|---------|
+| **Foundation** | [config.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/config.py), [client.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/llm/client.py) | Centralized config, dual-provider LLM client (Gemini + Ollama) |
+| **Data Models** | [persona.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/models/persona.py), [conversation.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/models/conversation.py), [feedback.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/models/feedback.py) | Pydantic v2 models matching roadmap's JSONL schema exactly |
+| **Persona Generator** | [generator.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/persona_generator/generator.py) | Batch LLM generation with diversity enforcement |
+| **Ditto Bot** | [agent.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/ditto_bot/agent.py), [matcher.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/ditto_bot/matcher.py), [prompts.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/ditto_bot/prompts.py) | Stateful matchmaking agent with hybrid embedding+LLM scoring |
+| **Customer Bot** | [agent.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/customer_bot/agent.py), [prompts.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/customer_bot/prompts.py) | Persona-driven user with ghosting, noise, frustration model |
+| **Orchestrator** | [engine.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/orchestrator/engine.py), [logger.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/orchestrator/logger.py) | Conversation loop engine + crash-resilient JSONL logging |
+| **CLI** | [main.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/main.py) | `generate-personas`, `simulate`, `validate` commands |
+
+---
+
+## Key Design Decisions
+
+1. **Dual LLM Provider**: Gemini for structured output (persona gen, match scoring, embeddings) + Ollama for conversation generation (cost-efficient local models)
+2. **Hybrid Match Scoring**: 40% embedding cosine similarity + 60% LLM chain-of-thought reasoning — mirrors real production matchmaking
+3. **Logic Isolation**: Customer Bot has **zero access** to Ditto Bot's scoring logic (per roadmap's critical rule)
+4. **Frustration Model**: Customer Bot dynamically adjusts ghosting probability based on persona traits + rejection count
+
+---
+
+## Test Results — ✅ 28/28 Passing
+
+```
+tests/test_matcher.py       5 passed  (hard filter logic)
+tests/test_models.py       16 passed  (model validation, JSON roundtrip, bounds)
+tests/test_orchestrator.py  3 passed  (logger roundtrip, schema compliance)
+tests/test_persona_generator.py  4 passed  (JSONL persistence, diversity hints)
+```
+
+---
+
+## How to Run
+
+```bash
+# 1. Generate personas
+python main.py generate-personas --count 20 --preview
+
+# 2. Run simulation (Ollama — requires `ollama pull llama3.2`)
+python main.py simulate --num-conversations 5
+
+# 2b. Run simulation (Gemini — no Ollama needed)
+python main.py simulate --num-conversations 5 --provider gemini
+
+# 3. Validate output
+python main.py validate data/conversations/conversations_*.jsonl
+```
+
+---
+
+## Future Work Compatibility
+
+All models are designed with future components in mind:
+- **MongoDB**: UUID `id` fields, `model_dump()` for BSON insertion
+- **ChromaDB RAG**: `to_embedding_text()` on Persona for semantic search
+- **Streamlit Dashboard**: JSONL output directly loadable via `ConversationLogger.load_conversations()`

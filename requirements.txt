@@ -1,0 +1,16 @@
+# Core
+google-genai>=1.64.0
+pydantic>=2.0
+python-dotenv>=1.0.0
+numpy>=1.24.0
+
+# Local model support (Ollama)
+ollama>=0.4.0
+
+# Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# MongoDB persistence
+pymongo>=4.6.0
+mongomock>=4.1.0
