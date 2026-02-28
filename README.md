@@ -5,12 +5,12 @@ A multi-agent simulation system that generates synthetic matchmaking conversatio
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────┐
 │               Simulation Orchestrator             │
-│  Manages conversation loops, logging, drop-offs  │
-├──────────────────────────────────────────────────┤
+│  Manages conversation loops, logging, drop-offs   │
+├───────────────────────────────────────────────────┤
 │                                                   │
-│  ┌─────────────────┐    ┌──────────────────────┐ │
+│  ┌──────────────────┐    ┌──────────────────────┐ │
 │  │    Ditto Bot     │◄──►│   Customer Bot       │ │
 │  │  (Matchmaker)    │    │  (Persona-driven)    │ │
 │  │                  │    │                      │ │
@@ -21,19 +21,19 @@ A multi-agent simulation system that generates synthetic matchmaking conversatio
 │  └────────┬─────────┘    └──────────────────────┘ │
 │           │                                       │
 │  ┌────────▼─────────┐                             │
-│  │   Match Scorer    │                             │
-│  │  Embedding (40%)  │                             │
+│  │   Match Scorer   │                             │
+│  │  Embedding (40%) │                             │
 │  │  + LLM CoT (60%) │                             │
 │  └──────────────────┘                             │
 ├───────────────────────────────────────────────────┤
-│              Persona Generator                     │
-│   Diverse synthetic college student profiles       │
+│              Persona Generator                    │
+│   Diverse synthetic college student profiles      │
 └───────────────────────────────────────────────────┘
          ▼                        ▼
    persona_pool.jsonl      conversations_*.jsonl
          ▼                        ▼
  ┌──────────────────────────────────────────────────┐
- │          MongoDB Persistence Layer (Opt-in)       │
+ │         MongoDB Persistence Layer (Opt-in)       │
  └──────────────────────────────────────────────────┘
 ```
 
