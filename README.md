@@ -6,6 +6,11 @@ A multi-agent simulation system that generates synthetic matchmaking conversatio
 
 ```
 ┌───────────────────────────────────────────────────┐
+│          Interactive Streamlit UI (app.py)         │
+│  👤 Persona Studio │ 💬 Simulation Arena │ 📊 Analytics │
+└──────────────────────┬────────────────────────────┘
+                       │
+┌──────────────────────▼────────────────────────────┐
 │               Simulation Orchestrator             │
 │  Manages conversation loops, logging, drop-offs   │
 ├───────────────────────────────────────────────────┤
@@ -48,6 +53,8 @@ A multi-agent simulation system that generates synthetic matchmaking conversatio
 | Embeddings | Nomic Embed Text (via Ollama) |
 | Data Models | Pydantic v2 |
 | Data Persistence | JSONL & MongoDB (pymongo) |
+| Interactive UI | Streamlit (multi-page app) |
+| Visualization | Plotly + Pandas |
 
 ## Quick Start
 
@@ -78,18 +85,31 @@ ollama pull llama3.2
 ollama pull nomic-embed-text
 ```
 
-### 4. Generate Personas
+### 4. Launch Interactive UI (Recommended)
 
-Generates detailed college student personas. Running this multiple times will *append* new unique personas to the existing pool.
+The easiest way to use the system — a web-based control panel to generate personas, run simulations, and analyze results:
+
+```bash
+streamlit run app.py
+```
+
+The app runs at `http://localhost:8501` with three pages:
+- **👤 Persona Studio** — Generate personas, view the gallery, inspect raw profiles
+- **💬 Simulation Arena** — Select a persona (or 🎲 random), watch live DittoBot ↔ CustomerBot chat, auto-sync results to MongoDB
+- **📊 Analytics** — View acceptance rates, rating distributions, and rejection analytics from MongoDB
+
+### 5. CLI: Generate Personas
+
+Generates detailed college student personas. Running multiple times **appends** new unique personas.
 
 ```bash
 python main.py generate-personas --count 20 --preview
 
-# Generate and also sync directly to MongoDB
+# Generate and sync directly to MongoDB
 python main.py generate-personas --count 20 --mongo
 ```
 
-### 5. Run Simulation
+### 6. CLI: Run Simulation
 
 Simulate full matchmaking conversations between Ditto and the generated personas.
 
@@ -97,25 +117,21 @@ Simulate full matchmaking conversations between Ditto and the generated personas
 # Small test run (5 conversations)
 python main.py simulate --num-conversations 5
 
-# Run simulation and sync results to MongoDB in real-time
+# Run simulation and sync results to MongoDB
 python main.py simulate --num-conversations 5 --mongo
 ```
 
-### 6. MongoDB Commands (Optional)
-
-If you have MongoDB running locally, you can use these commands to manage and view your data:
+### 7. MongoDB Commands (Optional)
 
 ```bash
-# Bulk import all existing JSONL files (personas and conversations) into MongoDB
+# Bulk import all existing JSONL files into MongoDB
 python main.py sync-to-mongo
 
-# View summary statistics of your generated data directly from MongoDB
+# View summary statistics from MongoDB
 python main.py mongo-stats
 ```
 
-### 7. Validate Output
-
-Validate that generated JSONL conversation logs match the required schema:
+### 8. Validate Output
 
 ```bash
 python main.py validate data/conversations/conversations_*.jsonl
@@ -124,28 +140,50 @@ python main.py validate data/conversations/conversations_*.jsonl
 ## Project Structure
 
 ```
-src/
-├── config.py                   # Centralized configuration
-├── models/
-│   ├── persona.py              # Persona Pydantic model
-│   ├── conversation.py         # Conversation log schema
-│   └── feedback.py             # Feedback models
-├── llm/
-│   └── client.py               # Local-first LLM client (Ollama/Prompt-based schema generation)
-├── persona_generator/
-│   └── generator.py            # Appending persona generation with diversity checks
-├── ditto_bot/
-│   ├── agent.py                # Stateful matchmaking agent
-│   ├── matcher.py              # Hybrid match scorer
-│   └── prompts.py              # System prompts
-├── customer_bot/
-│   ├── agent.py                # Persona-driven user bot
-│   └── prompts.py              # User bot prompts
-├── orchestrator/
-│   ├── engine.py               # Conversation simulation engine
-│   └── logger.py               # JSONL logger (with MongoDB dual-write)
-└── storage/
-    └── mongo_client.py         # MongoDB persistence and analytics layer
+Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
+│
+├── app.py                          # Streamlit entry point (Control Center)
+│
+├── pages/                          # Streamlit multi-page UI
+│   ├── 1_👤_Persona_Studio.py      # Persona generation & gallery
+│   ├── 2_💬_Simulation_Arena.py    # Live chat simulation + MongoDB sync
+│   └── 3_📊_Analytics.py           # Plotly dashboards for feedback analytics
+│
+├── main.py                         # CLI entry point (generate-personas, simulate, etc.)
+│
+├── src/
+│   ├── config.py                   # Centralized configuration
+│   ├── models/
+│   │   ├── persona.py              # Persona Pydantic model
+│   │   ├── conversation.py         # Conversation log schema
+│   │   └── feedback.py             # Feedback models
+│   ├── llm/
+│   │   └── client.py               # Local-first LLM client (Ollama / Gemini)
+│   ├── persona_generator/
+│   │   └── generator.py            # Appending persona generation with diversity checks
+│   ├── ditto_bot/
+│   │   ├── agent.py                # Stateful matchmaking agent (phase-driven)
+│   │   ├── matcher.py              # Hybrid match scorer (embedding + LLM CoT)
+│   │   └── prompts.py              # System prompts
+│   ├── customer_bot/
+│   │   ├── agent.py                # Persona-driven user bot (ghosting, noise, frustration)
+│   │   └── prompts.py              # User bot prompts
+│   ├── orchestrator/
+│   │   ├── engine.py               # Conversation simulation engine
+│   │   └── logger.py               # JSONL logger (with MongoDB dual-write)
+│   └── storage/
+│       └── mongo_client.py         # MongoDB persistence and analytics layer
+│
+├── tests/                          # Pytest test suite (41 tests, mongomock)
+│   ├── test_matcher.py
+│   ├── test_models.py
+│   ├── test_mongo.py
+│   ├── test_orchestrator.py
+│   └── test_persona_generator.py
+│
+├── doc/                            # Architecture and roadmap documents
+├── data/                           # Generated JSONL output files
+└── requirements.txt
 ```
 
 ## Conversation JSONL Schema
@@ -190,7 +228,8 @@ All settings are configurable via environment variables in your `.env` file:
 | `MAX_MATCH_ROUNDS` | `6` | Max match attempts per conversation |
 | `DROP_OFF_PROBABILITY` | `0.15` | Base probability of user ghosting |
 
-## Future Work (Compatible)
+## Future Work
 
 - **RAG Feedback Analyzer**: ConversationLog schema supports embedding-based feedback retrieval
-- **Streamlit Dashboard**: JSONL output is directly loadable for visualization, and MongoDB aggregation pipelines are already defined.
+- **Batch Mode**: Run N conversations in the background from the Simulation Arena UI
+- **Word Clouds**: Visualize rejection reasons as word clouds in the Analytics dashboard
