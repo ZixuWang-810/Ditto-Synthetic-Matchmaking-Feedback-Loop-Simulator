@@ -13,3 +13,8 @@ data/conversations/
 .idea/
 .vscode/
 *.swp
+
+# TMB dev tool
+TMB/
+.tmb/
+bro/

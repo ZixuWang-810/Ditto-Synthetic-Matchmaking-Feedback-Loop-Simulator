@@ -1,8 +1,0 @@
-name: test
-max_retry_per_task: 3
-roles:
-  preset: software-engineering
-  owner: Chief Architect
-  planner: Architect
-  executor: SWE
-purpose: Agentic AI and Matchmaking related project
