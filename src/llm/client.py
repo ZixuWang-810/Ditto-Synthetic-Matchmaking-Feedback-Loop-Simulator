@@ -16,6 +16,150 @@ from src import config
 logger = logging.getLogger(__name__)
 
 
+# ── JSON Repair Helpers ───────────────────────────────────────────────────────
+
+def _fix_unescaped_inner_quotes(text: str) -> str:
+    """Fix unescaped double quotes inside JSON string values.
+
+    Handles cases like: "height difference (5'5" vs 6'1")"
+    The inner " after 5'5 breaks JSON parsing.
+
+    Strategy: Use a character-by-character state machine that tracks whether
+    we're inside a JSON string. When it detects a '"' that is NOT preceded by
+    '\\' and is NOT a structural string delimiter (i.e., it's followed by
+    characters that don't match ':', ',', '}', ']', or whitespace + any of
+    those), escape it to '\\"'.
+    """
+    result = []
+    i = 0
+    in_string = False
+    escape_next = False
+
+    while i < len(text):
+        ch = text[i]
+
+        if escape_next:
+            result.append(ch)
+            escape_next = False
+            i += 1
+            continue
+
+        if ch == '\\':
+            result.append(ch)
+            escape_next = True
+            i += 1
+            continue
+
+        if ch == '"':
+            if not in_string:
+                in_string = True
+                result.append(ch)
+            else:
+                # Check if this quote is really the end of the string.
+                # Look ahead: after optional whitespace, should see , : ] } or end.
+                rest = text[i + 1:].lstrip()
+                if not rest or rest[0] in (',', ':', ']', '}', '\n'):
+                    # This is a real closing quote
+                    in_string = False
+                    result.append(ch)
+                else:
+                    # This is an unescaped interior quote — escape it
+                    result.append('\\"')
+            i += 1
+            continue
+
+        result.append(ch)
+        i += 1
+
+    return ''.join(result)
+
+
+def _close_brackets(text: str) -> str:
+    """Close any unclosed brackets/braces at the end of truncated JSON."""
+    stack = []
+    in_string = False
+    escape_next = False
+
+    for ch in text:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in ('{', '['):
+            stack.append(ch)
+        elif ch == '}' and stack and stack[-1] == '{':
+            stack.pop()
+        elif ch == ']' and stack and stack[-1] == '[':
+            stack.pop()
+
+    # If we're still inside a string, close it
+    if in_string:
+        text += '"'
+
+    # Close remaining open brackets in reverse order
+    for bracket in reversed(stack):
+        text += ']' if bracket == '[' else '}'
+
+    return text
+
+
+def repair_json(raw: str) -> Optional[dict]:
+    """Attempt to repair common LLM JSON issues and parse.
+
+    Fixes applied in order:
+    1. Strip markdown code fences (```json ... ```)
+    2. Find the JSON object start (first '{')
+    3. Fix trailing commas before ] or }
+    4. Fix unescaped double quotes inside string values
+    5. Close unclosed brackets/braces
+    5b. Fix trailing commas again (may be exposed after bracket closing)
+    6. Attempt json.loads() — return dict on success, None on failure
+
+    Returns parsed dict on success, None on failure.
+    """
+    text = raw.strip()
+
+    # Step 1: Extract JSON object if wrapped in markdown code fences
+    fence_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if fence_match:
+        text = fence_match.group(1)
+
+    # Step 2: Ensure we're working with the JSON object portion
+    start = text.find('{')
+    if start == -1:
+        return None
+    text = text[start:]
+
+    # Step 3: Fix trailing commas before ] or }
+    text = re.sub(r',\s*([}\]])', r'\1', text)
+
+    # Step 4: Fix unescaped double quotes INSIDE string values
+    text = _fix_unescaped_inner_quotes(text)
+
+    # Step 5: Close unclosed brackets/braces
+    text = _close_brackets(text)
+
+    # Step 5b: Fix trailing commas again — closing brackets may have exposed
+    # a trailing comma that was previously at the end of the truncated string
+    # (e.g. '{"a": 1, "b": [1, 2,' → after close → '{"a": 1, "b": [1, 2,]}')
+    text = re.sub(r',\s*([}\]])', r'\1', text)
+
+    # Step 6: Try parsing
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+# ── LLM Client ────────────────────────────────────────────────────────────────
+
 class LLMClient:
     """LLM client using Ollama local models for all operations:
     chat, structured output (JSON mode), and embeddings."""
@@ -89,6 +233,12 @@ class LLMClient:
 
         Converts the schema to a human-readable example (local models understand
         examples far better than raw JSON schema definitions).
+
+        On parse failure, applies a repair-then-retry pipeline:
+        1. Attempt repair_json() on the raw response and validate.
+        2. If repair fails, retry the LLM call once with a correction prompt.
+        3. On retry, attempt direct parse, then repair again.
+        4. If all attempts fail, raise ValueError with the original raw text.
         """
         client = self._get_client()
         model = model or self.model
@@ -118,17 +268,101 @@ class LLMClient:
 
         raw_text = response["message"]["content"]
 
-        # Parse and validate against Pydantic model
+        # ── Attempt 1: Direct parse ───────────────────────────────────────
         try:
             return response_schema.model_validate_json(raw_text)
-        except Exception as e:
+        except Exception as original_exc:
             # Try to extract JSON from the response if it contains extra text
             json_match = re.search(r'\{[\s\S]*\}', raw_text)
             if json_match:
-                return response_schema.model_validate_json(json_match.group())
-            raise ValueError(
-                f"Failed to parse structured output: {e}\nRaw response: {raw_text[:500]}"
+                try:
+                    return response_schema.model_validate_json(json_match.group())
+                except Exception:
+                    pass
+
+            original_error = ValueError(
+                f"Failed to parse structured output: {original_exc}\n"
+                f"Raw response: {raw_text[:500]}"
             )
+
+        # ── Attempt 2: Repair the raw response ───────────────────────────
+        logger.warning(
+            f"Structured parse failed for {response_schema.__name__}, "
+            f"attempting JSON repair... (raw[:200]: {raw_text[:200]!r})"
+        )
+        repaired = repair_json(raw_text)
+        if repaired is not None:
+            try:
+                result = response_schema.model_validate(repaired)
+                logger.warning(
+                    f"JSON repair succeeded for {response_schema.__name__}."
+                )
+                return result
+            except Exception as repair_val_exc:
+                logger.warning(
+                    f"JSON repair produced a dict but validation failed for "
+                    f"{response_schema.__name__}: {repair_val_exc}"
+                )
+        else:
+            logger.warning(
+                f"JSON repair returned None for {response_schema.__name__}."
+            )
+
+        # ── Attempt 3: Retry the LLM call with a correction prompt ───────
+        logger.warning(
+            f"Retrying LLM call for {response_schema.__name__} with correction "
+            f"prompt (temperature=0.2)..."
+        )
+        retry_messages = messages + [
+            {"role": "assistant", "content": raw_text},
+            {
+                "role": "user",
+                "content": (
+                    "Your previous response had invalid JSON. "
+                    "Return ONLY valid JSON matching the schema. No extra text."
+                ),
+            },
+        ]
+        retry_response = client.chat(
+            model=model,
+            messages=retry_messages,
+            format="json",
+            options={"temperature": 0.2},
+        )
+        retry_raw = retry_response["message"]["content"]
+
+        # Attempt 3a: Direct parse of retry response
+        try:
+            result = response_schema.model_validate_json(retry_raw)
+            logger.warning(
+                f"Retry direct parse succeeded for {response_schema.__name__}."
+            )
+            return result
+        except Exception:
+            pass
+
+        # Attempt 3b: Repair the retry response
+        retry_repaired = repair_json(retry_raw)
+        if retry_repaired is not None:
+            try:
+                result = response_schema.model_validate(retry_repaired)
+                logger.warning(
+                    f"Retry repair succeeded for {response_schema.__name__}."
+                )
+                return result
+            except Exception as retry_repair_val_exc:
+                logger.warning(
+                    f"Retry repair produced a dict but validation failed for "
+                    f"{response_schema.__name__}: {retry_repair_val_exc}"
+                )
+        else:
+            logger.warning(
+                f"Retry repair returned None for {response_schema.__name__}. "
+                f"retry_raw[:200]: {retry_raw[:200]!r}"
+            )
+
+        # ── All attempts exhausted — raise original error ─────────────────
+        raise original_error
 
     @staticmethod
     def _schema_to_example(schema: dict) -> dict:

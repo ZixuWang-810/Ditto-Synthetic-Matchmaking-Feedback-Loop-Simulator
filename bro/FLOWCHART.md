@@ -1,31 +1,38 @@
-# Project Architecture — Issue #3
+# Project Architecture — Issue #12
 
-**Objective**: We have a bug running your last update of langgraph for conversation module. The conversation was successfully generated
+**Objective**: Got this error log when run the conversation simulation in UI:
+ValueError: Failed to parse structured output: 1 validati
+
+
 
 ```mermaid
 flowchart TD
-    UI["🖥️ Streamlit UI\nPersona Studio · Simulation Arena · Analytics"]
-    CLI["⌨️ CLI Entry\nmain.py"]
+    UI["🖥️ Streamlit Multi-Page UI\n(Home, Simulation Arena, Analytics)"]
+    LG["🔄 LangGraph Orchestrator\n(Conversation State Machine)"]
+    Nodes["🤖 Graph Nodes\n(generate_matches, simulate_convo,\nscore_matches, handle_decision)"]
+    Matcher["💘 MatchScorer\n(Embedding + LLM Hybrid Scoring)"]
+    LLM["🧠 LLMClient\n(Ollama / Gemini + JSON Repair)"]
+    Personas["👤 Persona Generator\n(LLM-driven Synthetic Profiles)"]
+    ConvoSim["💬 Conversation Simulator\n(Multi-turn Bot Dialogue)"]
+    Embeddings["📐 Embedding Engine\n(Cosine Similarity Scoring)"]
+    JSONL["📄 JSONL Data Files\n(Personas, Conversations, Scores)"]
+    MongoDB["🗄️ MongoDB\n(Persistent Storage & Sync)"]
+    Models["📋 Pydantic Models\n(Persona, CompatibilityScore,\nConversation, MatchResult)"]
+    Analytics["📊 Analytics & Feedback Loop\n(Acceptance Rates, Rating Distributions)"]
 
-    UI --> Engine
-    CLI --> Engine
-
-    Engine["🔄 Simulation Engine\nOrchestrates conversations\nManages rounds & drop-offs"]
-
-    Engine --> DittoGraph["🤖 Ditto Bot\nLangGraph StateGraph\nPhase-driven conversation"]
-    Engine --> CustomerBot["👤 Customer Bot\nPersona-driven responses\nGhosting & frustration model"]
-
-    DittoGraph <-->|turn-by-turn| CustomerBot
-
-    DittoGraph --> Matcher["📊 Match Scorer\nEmbedding similarity (40%)\n+ LLM CoT reasoning (60%)"]
-
-    Matcher --> Ollama["🧠 Ollama / LLM\ngemma3 · nomic-embed-text"]
-    DittoGraph --> Ollama
-    CustomerBot --> Ollama
-
-    PersonaGen["🎭 Persona Generator\nDiverse synthetic profiles"] --> PersonaPool["📄 persona_pool.jsonl"]
-    PersonaPool --> Engine
-
-    Engine --> ConvLogs["📄 conversations_*.jsonl"]
-    Engine --> MongoDB["🗄️ MongoDB\nOptional dual-write"]
+    UI -->|invoke simulation| LG
+    LG -->|routes to| Nodes
+    Nodes -->|scoring| Matcher
+    Nodes -->|dialogue| ConvoSim
+    Matcher -->|LLM compatibility| LLM
+    Matcher -->|vector similarity| Embeddings
+    ConvoSim -->|generate turns| LLM
+    Personas -->|create profiles| LLM
+    Personas -->|write| JSONL
+    Nodes -->|read/write| JSONL
+    JSONL -->|sync| MongoDB
+    Models -.->|validates all data| Nodes
+    Models -.->|validates all data| Matcher
+    UI -->|visualize| Analytics
+    Analytics -->|reads| MongoDB
 ```

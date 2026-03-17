@@ -252,9 +252,21 @@ Be realistic — most matches should score 0.3-0.7. Reserve 0.8+ for genuinely e
             "Output strict JSON matching the schema."
         )
 
-        return self.client.generate_structured(
-            prompt=prompt,
-            response_schema=CompatibilityScore,
-            system_prompt=system_prompt,
-            temperature=0.3,
-        )
+        try:
+            return self.client.generate_structured(
+                prompt=prompt,
+                response_schema=CompatibilityScore,
+                system_prompt=system_prompt,
+                temperature=0.3,
+            )
+        except (ValueError, Exception) as e:
+            logger.warning(
+                "LLM compatibility scoring failed for %s vs %s: %s",
+                user.name, candidate.name, e,
+            )
+            return CompatibilityScore(
+                score=0.5,
+                justification="LLM scoring unavailable — using neutral fallback score",
+                shared_interests=[],
+                potential_issues=["scoring_unavailable"],
+            )

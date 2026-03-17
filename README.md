@@ -130,6 +130,22 @@ The LangGraph integration is a **drop-in orchestration layer** — the following
 - **Prompt templates** (`src/ditto_bot/prompts.py`) — all 5 prompts (`DITTO_SYSTEM_PROMPT`, `MATCH_PRESENTATION_PROMPT`, `REJECTION_HANDLING_PROMPT`, `DATE_PROPOSAL_PROMPT`, `POST_DATE_FEEDBACK_PROMPT`)
 - **Pydantic models** (`src/models/persona.py`, `src/models/conversation.py`) — `Persona`, `DatingPreferences`, `ConversationLog`, `Turn`, `MatchPresented`, etc.
 
+## LLM Output Resilience
+
+Local LLMs — especially smaller models like `llama3.2` — can produce malformed JSON that breaks structured output parsing. Common failure modes include unescaped inner quotes (e.g. a height value like `5'5"`), output truncated by token limits, and trailing commas in objects or arrays.
+
+To keep simulations running without manual intervention, the pipeline uses a **3-layer defence**:
+
+- **Layer 1 — `repair_json()` in `src/llm/client.py`**: Applied to every structured LLM response before parsing. Fixes unescaped inner quotes, closes unclosed brackets and braces, strips trailing commas, and extracts JSON from markdown code fences. Handles the majority of real-world malformed output silently.
+
+- **Layer 2 — Retry with nudge**: If the repaired output still fails to parse, the LLM call is retried once with a corrective prompt that explicitly instructs the model to return only valid JSON, at a lower temperature to reduce creativity-induced noise.
+
+- **Layer 3 — Neutral fallback in `src/ditto_bot/matcher.py`**: If both the repair and the retry fail, `MatchScorer` returns a neutral `CompatibilityScore(score=0.5)` rather than raising an exception. The simulation continues uninterrupted; no conversation is lost to a transient parsing error.
+
+### Observability
+
+All repair, retry, and fallback events are logged at `WARNING` level so they are visible in standard log output without halting execution. Scores produced by the Layer 3 fallback include `"scoring_unavailable"` in the `potential_issues` field of the returned `CompatibilityScore`, making them detectable in downstream analytics.
+
 ## Bug Fixes & Resilience (Issue #3)
 
 ### Graph Routing Fix
