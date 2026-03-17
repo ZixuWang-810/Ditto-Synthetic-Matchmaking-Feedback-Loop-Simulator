@@ -42,6 +42,8 @@ class MatchScorer:
       preferences, and overall compatibility
     
     This mirrors how real matchmaking systems blend fast retrieval with deep scoring.
+    When the embedding model is unavailable, the scorer gracefully falls back to
+    100% LLM-based scoring so conversations are never interrupted.
     """
 
     def __init__(self, llm_client: LLMClient | None = None):
@@ -81,8 +83,20 @@ class MatchScorer:
             logger.warning(f"No eligible candidates for {user.name} after filtering")
             return []
 
-        # Stage 1: Embedding similarity (batch)
-        embedding_scores = self._compute_embedding_scores(user, eligible)
+        # Stage 1: Embedding similarity (batch) — with graceful fallback
+        # _warned_embedding_failure ensures the warning is logged only once per call
+        _warned_embedding_failure = False
+        embedding_scores, embedding_available = self._compute_embedding_scores_safe(
+            user, eligible
+        )
+
+        if not embedding_available and not _warned_embedding_failure:
+            logger.warning(
+                "Embedding scoring failed, falling back to LLM-only: "
+                "nomic-embed-text may not be pulled. "
+                "All candidates will be scored using LLM reasoning only."
+            )
+            _warned_embedding_failure = True
 
         # Stage 2: LLM scoring for top candidates (cost optimization — only score top 5 by embedding)
         top_by_embedding = sorted(
@@ -97,10 +111,15 @@ class MatchScorer:
                 user, candidate, rejection_reasons
             )
 
-            combined = (
-                config.EMBEDDING_SCORE_WEIGHT * emb_score
-                + config.LLM_SCORE_WEIGHT * llm_result.score
-            )
+            if embedding_available:
+                combined = (
+                    config.EMBEDDING_SCORE_WEIGHT * emb_score
+                    + config.LLM_SCORE_WEIGHT * llm_result.score
+                )
+            else:
+                # Embeddings unavailable — use 100% LLM weight to avoid
+                # artificially deflating scores (0.4 * 0 + 0.6 * llm = only 60%)
+                combined = llm_result.score
 
             results.append(MatchResult(
                 candidate=candidate,
@@ -139,6 +158,25 @@ class MatchScorer:
 
 
         return True
+
+    def _compute_embedding_scores_safe(
+        self, user: Persona, candidates: list[Persona]
+    ) -> tuple[list[float], bool]:
+        """Compute embedding cosine similarity with graceful fallback.
+
+        Returns:
+            A tuple of (scores, embedding_available) where:
+            - scores: per-candidate similarity scores (all 0.0 if embeddings failed)
+            - embedding_available: False if the embedding model is unavailable
+        """
+        try:
+            scores = self._compute_embedding_scores(user, candidates)
+            return scores, True
+        except Exception as e:
+            logger.warning(
+                f"Embedding scoring failed, falling back to LLM-only: {e}"
+            )
+            return [0.0] * len(candidates), False
 
     def _compute_embedding_scores(
         self, user: Persona, candidates: list[Persona]

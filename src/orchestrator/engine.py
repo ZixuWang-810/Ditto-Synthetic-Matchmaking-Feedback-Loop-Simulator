@@ -6,9 +6,11 @@ import logging
 import random
 import time
 
+from langchain_core.messages import AIMessage, HumanMessage
+
 from src import config
 from src.llm.client import LLMClient, get_llm_client
-from src.ditto_bot.agent import DittoBot, ConversationPhase
+from src.ditto_bot.graph import build_ditto_graph, DittoState
 from src.customer_bot.agent import CustomerBot
 from src.orchestrator.logger import ConversationLogger
 from src.models.persona import Persona
@@ -45,6 +47,8 @@ class SimulationEngine:
         self.persona_pool = persona_pool
         self.client = llm_client or get_llm_client()
         self.logger = ConversationLogger(output_dir=output_dir, mongo_enabled=mongo_enabled)
+        # Build the compiled LangGraph once and reuse across conversations
+        self._ditto_graph = build_ditto_graph()
 
     def run(
         self,
@@ -90,6 +94,7 @@ class SimulationEngine:
 
             except Exception as e:
                 logger.error(f"  Conversation {i+1} failed: {e}")
+                # Partial log is saved inside _run_single_conversation before re-raising
                 continue
 
         elapsed = time.time() - start_time
@@ -102,13 +107,9 @@ class SimulationEngine:
         return results
 
     def _run_single_conversation(self, user_persona: Persona) -> ConversationLog:
-        """Run a single conversation between Ditto Bot and a Customer Bot."""
+        """Run a single conversation between Ditto Bot (LangGraph) and a Customer Bot."""
 
-        # Initialize agents — both use the same Ollama client
-        ditto = DittoBot(
-            persona_pool=self.persona_pool,
-            llm_client=self.client,
-        )
+        # Initialize CustomerBot — uses the raw LLMClient (unchanged)
         customer = CustomerBot(
             persona=user_persona,
             llm_client=self.client,
@@ -119,106 +120,164 @@ class SimulationEngine:
         turns: list[Turn] = []
         sentiment_trajectory: list[SentimentLabel] = [SentimentLabel.NEUTRAL]
 
-        # Phase 1: Ditto greets the user
-        greeting = ditto.start_conversation(user_persona)
-        turns.append(Turn(role=TurnRole.DITTO, content=greeting))
-        logger.info(f"  [Ditto] {greeting[:100]}...")
+        # ── Build initial DittoState ───────────────────────────────────────────
+        state: DittoState = {
+            "messages": [],
+            "user_persona": user_persona.model_dump(),
+            "persona_pool": [p.model_dump() for p in self.persona_pool],
+            "phase": "greeting",
+            "user_preferences": [],
+            "rejection_reasons": [],
+            "shown_match_ids": [],
+            "current_match": None,
+            "accepted_match": None,
+            "current_round": 0,
+            "max_rounds": config.MAX_MATCH_ROUNDS,
+            "llm_model": self.client.model,
+            "embedding_model": self.client.embedding_model,
+        }
 
-        # Phase 2: User shares preferences
-        user_response = customer.respond(greeting)
-        turns.append(Turn(role=TurnRole.USER, content=user_response))
-        logger.info(f"  [{user_persona.name}] {user_response[:100]}...")
+        try:
+            # ── Phase 1: Invoke graph to get the greeting ─────────────────────────
+            state = self._ditto_graph.invoke(state)
 
-        # Check for immediate drop-off
-        if customer.has_dropped_off:
-            log.dropped_off = True
-            log.turns = turns
-            log.sentiment_trajectory = sentiment_trajectory
-            return log
+            # Extract the AI greeting from the last message
+            greeting = self._extract_last_ai_message(state)
+            turns.append(Turn(role=TurnRole.DITTO, content=greeting))
+            logger.info(f"  [Ditto] {greeting[:100]}...")
 
-        # Phase 3: Match loop
-        turn_count = 0
-        max_turns = config.MAX_CONVERSATION_TURNS
+            # ── Phase 2: Customer responds to greeting ────────────────────────────
+            user_response = customer.respond(greeting)
+            turns.append(Turn(role=TurnRole.USER, content=user_response))
+            logger.info(f"  [{user_persona.name}] {user_response[:100]}...")
 
-        while not ditto.is_complete and turn_count < max_turns:
-            turn_count += 1
-
-            # Ditto responds (may present a match, handle rejection, propose date, etc.)
-            ditto_response = ditto.respond(user_response)
-            turns.append(Turn(role=TurnRole.DITTO, content=ditto_response))
-            logger.info(f"  [Ditto] {ditto_response[:100]}...")
-
-            if ditto.is_complete:
-                break
-
-            # Determine customer response based on conversation phase
-            if ditto.phase == ConversationPhase.PRESENTING_MATCH:
-                # Record the match
-                if ditto.current_match:
-                    match_presented = MatchPresented(
-                        match_id=ditto.current_match.candidate.id,
-                        match_name=ditto.current_match.candidate.name,
-                        round=ditto.current_round,
-                        accepted=False,  # Will update if accepted
-                        justification=ditto.current_match.justification,
-                    )
-                    log.matches_presented.append(match_presented)
-
-                # Customer evaluates the match
-                user_response = customer.evaluate_match(ditto_response)
-                turns.append(Turn(role=TurnRole.USER, content=user_response))
-                logger.info(f"  [{user_persona.name}] {user_response[:100]}...")
-
-                # Check if accepted
-                lower = user_response.lower()
-                accepted = any(w in lower for w in [
-                    "yes", "sure", "sounds good", "let's do it", "okay", "down",
-                    "interested", "love", "great", "accept", "cool",
-                ])
-
-                if accepted and log.matches_presented:
-                    log.matches_presented[-1].accepted = True
-                    log.rounds_to_acceptance = ditto.current_round
-                    sentiment_trajectory.append(SentimentLabel.EXCITED)
-                else:
-                    log.rejection_reasons.append(user_response)
-                    sentiment_trajectory.append(
-                        SentimentLabel.FRUSTRATED if customer.frustration_level > 0.4
-                        else SentimentLabel.NEUTRAL
-                    )
-
-            elif ditto.phase == ConversationPhase.POST_DATE_FEEDBACK:
-                # Customer gives post-date feedback
-                feedback_response, rating = customer.give_post_date_feedback(ditto_response)
-                turns.append(Turn(role=TurnRole.USER, content=feedback_response))
-                logger.info(f"  [{user_persona.name}] {feedback_response[:100]}... (Rating: {rating})")
-
-                log.post_date_rating = rating
-                log.post_date_feedback = feedback_response
-                user_response = feedback_response
-                sentiment_trajectory.append(
-                    SentimentLabel.SATISFIED if rating >= 3 else SentimentLabel.DISAPPOINTED
-                )
-
-            else:
-                # General response
-                user_response = customer.respond(ditto_response)
-                turns.append(Turn(role=TurnRole.USER, content=user_response))
-                logger.info(f"  [{user_persona.name}] {user_response[:100]}...")
-
-            # Check for drop-off
+            # Check for immediate drop-off
             if customer.has_dropped_off:
                 log.dropped_off = True
-                sentiment_trajectory.append(SentimentLabel.FRUSTRATED)
-                logger.info(f"  [{user_persona.name}] 👻 dropped off")
-                break
+                log.turns = turns
+                log.sentiment_trajectory = sentiment_trajectory
+                return log
 
-        # Finalize log
-        log.turns = turns
-        log.sentiment_trajectory = sentiment_trajectory
-        log.total_rounds = ditto.current_round
+            # ── Phase 3: Main conversation loop ───────────────────────────────────
+            turn_count = 0
+            max_turns = config.MAX_CONVERSATION_TURNS
 
-        return log
+            while turn_count < max_turns:
+                turn_count += 1
+
+                # Add the latest user message to state and invoke the graph
+                state["messages"] = list(state["messages"]) + [HumanMessage(content=user_response)]
+                state = self._ditto_graph.invoke(state)
+
+                # Extract Ditto's response
+                ditto_response = self._extract_last_ai_message(state)
+                turns.append(Turn(role=TurnRole.DITTO, content=ditto_response))
+                logger.info(f"  [Ditto] {ditto_response[:100]}...")
+
+                current_phase = state.get("phase", "completed")
+
+                # Check for conversation completion
+                if current_phase == "completed":
+                    break
+
+                # ── Phase-specific customer response logic ────────────────────────
+                if current_phase == "presenting_match":
+                    # Record the match presented
+                    current_match = state.get("current_match")
+                    if current_match:
+                        match_candidate = current_match.get("candidate", {})
+                        match_presented = MatchPresented(
+                            match_id=match_candidate.get("id", ""),
+                            match_name=match_candidate.get("name", "Unknown"),
+                            round=state.get("current_round", 1),
+                            accepted=False,  # Will update if accepted
+                            justification=current_match.get("justification", ""),
+                        )
+                        log.matches_presented.append(match_presented)
+
+                    # Customer evaluates the match
+                    user_response = customer.evaluate_match(ditto_response)
+                    turns.append(Turn(role=TurnRole.USER, content=user_response))
+                    logger.info(f"  [{user_persona.name}] {user_response[:100]}...")
+
+                    # Check if accepted
+                    lower = user_response.lower()
+                    accepted = any(w in lower for w in [
+                        "yes", "sure", "sounds good", "let's do it", "okay", "down",
+                        "interested", "love", "great", "accept", "cool",
+                    ])
+
+                    if accepted and log.matches_presented:
+                        log.matches_presented[-1].accepted = True
+                        log.rounds_to_acceptance = state.get("current_round", 1)
+                        sentiment_trajectory.append(SentimentLabel.EXCITED)
+                    else:
+                        log.rejection_reasons.append(user_response)
+                        sentiment_trajectory.append(
+                            SentimentLabel.FRUSTRATED if customer.frustration_level > 0.4
+                            else SentimentLabel.NEUTRAL
+                        )
+
+                elif current_phase == "post_date_feedback":
+                    # Customer gives post-date feedback
+                    feedback_response, rating = customer.give_post_date_feedback(ditto_response)
+                    turns.append(Turn(role=TurnRole.USER, content=feedback_response))
+                    logger.info(f"  [{user_persona.name}] {feedback_response[:100]}... (Rating: {rating})")
+
+                    log.post_date_rating = rating
+                    log.post_date_feedback = feedback_response
+                    user_response = feedback_response
+                    sentiment_trajectory.append(
+                        SentimentLabel.SATISFIED if rating >= 3 else SentimentLabel.DISAPPOINTED
+                    )
+
+                else:
+                    # General response (collecting_preferences or other phases)
+                    user_response = customer.respond(ditto_response)
+                    turns.append(Turn(role=TurnRole.USER, content=user_response))
+                    logger.info(f"  [{user_persona.name}] {user_response[:100]}...")
+
+                # Check for drop-off
+                if customer.has_dropped_off:
+                    log.dropped_off = True
+                    sentiment_trajectory.append(SentimentLabel.FRUSTRATED)
+                    logger.info(f"  [{user_persona.name}] 👻 dropped off")
+                    break
+
+            # ── Finalize log ──────────────────────────────────────────────────────
+            log.turns = turns
+            log.sentiment_trajectory = sentiment_trajectory
+            log.total_rounds = state.get("current_round", 0)
+
+            return log
+
+        except Exception as e:
+            # Save whatever turns were collected before the crash
+            if turns:
+                partial_log = ConversationLog(
+                    persona=user_persona,
+                    turns=turns,
+                    matches_presented=log.matches_presented,
+                    rejection_reasons=log.rejection_reasons,
+                    sentiment_trajectory=sentiment_trajectory,
+                    rounds_to_acceptance=log.rounds_to_acceptance,
+                    post_date_rating=log.post_date_rating,
+                    post_date_feedback=log.post_date_feedback,
+                    dropped_off=True,
+                    total_rounds=state.get("current_round", 0),
+                )
+                self.logger.log_conversation(partial_log)
+                logger.info(f"Saved partial conversation ({len(turns)} turns) despite error")
+            # Re-raise so the caller's except block can count this as a failure
+            raise
+
+    def _extract_last_ai_message(self, state: DittoState) -> str:
+        """Extract the content of the most recent AIMessage from graph state."""
+        messages = state.get("messages", [])
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage):
+                return msg.content
+        return ""
 
     def _select_user_personas(self, count: int) -> list[Persona]:
         """Select user personas for conversations, sampling with replacement if needed."""

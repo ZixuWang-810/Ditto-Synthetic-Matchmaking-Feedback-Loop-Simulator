@@ -3,9 +3,11 @@ import time
 import random
 from src.storage.mongo_client import get_mongo_storage
 from src.llm.client import get_llm_client
-from src.ditto_bot.agent import DittoBot, ConversationPhase
+from src.ditto_bot.graph import build_ditto_graph, DittoState
 from src.customer_bot.agent import CustomerBot
 from src.models.conversation import ConversationLog, Turn, TurnRole, MatchPresented, SentimentLabel
+from src import config
+from langchain_core.messages import AIMessage, HumanMessage
 
 st.set_page_config(page_title="Simulation Arena", page_icon="💬", layout="wide")
 
@@ -70,7 +72,7 @@ with col2:
         
         # Initialize agents using the real APIs
         llm = get_llm_client()
-        ditto = DittoBot(persona_pool=all_personas, llm_client=llm)
+        ditto_graph = build_ditto_graph()
         customer = CustomerBot(persona=selected_persona, llm_client=llm)
         
         # Initialize conversation log for MongoDB persistence
@@ -79,10 +81,35 @@ with col2:
         sentiment_trajectory = [SentimentLabel.NEUTRAL]
         post_date_rating = None
         post_date_feedback_text = None
+
+        # ── Build initial DittoState ──────────────────────────────────────────
+        state: DittoState = {
+            "messages": [],
+            "user_persona": selected_persona.model_dump(),
+            "persona_pool": [p.model_dump() for p in all_personas],
+            "phase": "greeting",
+            "user_preferences": [],
+            "rejection_reasons": [],
+            "shown_match_ids": [],
+            "current_match": None,
+            "accepted_match": None,
+            "current_round": 0,
+            "max_rounds": config.MAX_MATCH_ROUNDS,
+            "llm_model": llm.model,
+            "embedding_model": llm.embedding_model,
+        }
         
         with st.spinner("Initializing Conversation..."):
-            # Phase 1: Ditto greets the user
-            greeting = ditto.start_conversation(selected_persona)
+            # Phase 1: Invoke graph to get the greeting
+            state = ditto_graph.invoke(state)
+
+            # Extract the AI greeting from the last message
+            greeting = ""
+            for msg in reversed(state["messages"]):
+                if isinstance(msg, AIMessage):
+                    greeting = msg.content
+                    break
+
             turns_log.append(Turn(role=TurnRole.DITTO, content=greeting))
             
             with chat_container:
@@ -90,7 +117,7 @@ with col2:
                     st.markdown(greeting)
             
             with thought_container:
-                st.markdown(f"**Phase:** `{ditto.phase.value}`")
+                st.markdown(f"**Phase:** `{state.get('phase', 'greeting')}`")
                 st.divider()
             
             # Phase 2: User shares preferences
@@ -116,40 +143,55 @@ with col2:
             # Phase 3: Conversation loop
             turn_count = 0
             
-            while not ditto.is_complete and turn_count < max_turns:
+            while state.get("phase", "completed") != "completed" and turn_count < max_turns:
                 turn_count += 1
                 time.sleep(0.5)
                 
                 with st.spinner(f"Ditto is thinking (Turn {turn_count})..."):
-                    ditto_response = ditto.respond(user_response)
+                    # Add the latest user message to state and invoke the graph
+                    state["messages"] = list(state["messages"]) + [HumanMessage(content=user_response)]
+                    state = ditto_graph.invoke(state)
                 
+                # Extract Ditto's response from the last AIMessage
+                ditto_response = ""
+                for msg in reversed(state["messages"]):
+                    if isinstance(msg, AIMessage):
+                        ditto_response = msg.content
+                        break
+
                 turns_log.append(Turn(role=TurnRole.DITTO, content=ditto_response))
                 
                 with chat_container:
                     with st.chat_message("ai", avatar="🤖"):
                         st.markdown(ditto_response)
                 
+                current_phase = state.get("phase", "completed")
+
                 with thought_container:
-                    st.markdown(f"**Turn {turn_count} | Phase:** `{ditto.phase.value}`")
-                    if hasattr(ditto, 'current_match') and ditto.current_match:
-                        st.markdown(f"- Match: `{ditto.current_match.candidate.name}`")
-                        st.markdown(f"- Justification: _{ditto.current_match.justification}_")
+                    st.markdown(f"**Turn {turn_count} | Phase:** `{current_phase}`")
+                    current_match = state.get("current_match")
+                    if current_match:
+                        candidate = current_match.get("candidate", {})
+                        st.markdown(f"- Match: `{candidate.get('name', 'Unknown')}`")
+                        st.markdown(f"- Justification: _{current_match.get('justification', '')}_")
                     st.divider()
                 
-                if ditto.is_complete:
+                if current_phase == "completed":
                     break
                 
                 # Customer responds based on conversation phase
                 with st.spinner("User is responding..."):
-                    if ditto.phase == ConversationPhase.PRESENTING_MATCH:
+                    if current_phase == "presenting_match":
                         # Record the match
-                        if hasattr(ditto, 'current_match') and ditto.current_match:
+                        current_match = state.get("current_match")
+                        if current_match:
+                            match_candidate = current_match.get("candidate", {})
                             match_presented = MatchPresented(
-                                match_id=ditto.current_match.candidate.id,
-                                match_name=ditto.current_match.candidate.name,
-                                round=getattr(ditto, 'current_round', turn_count),
+                                match_id=match_candidate.get("id", ""),
+                                match_name=match_candidate.get("name", "Unknown"),
+                                round=state.get("current_round", turn_count),
                                 accepted=False,
-                                justification=ditto.current_match.justification,
+                                justification=current_match.get("justification", ""),
                             )
                             log.matches_presented.append(match_presented)
                         
@@ -164,7 +206,7 @@ with col2:
                         
                         if accepted and log.matches_presented:
                             log.matches_presented[-1].accepted = True
-                            log.rounds_to_acceptance = getattr(ditto, 'current_round', turn_count)
+                            log.rounds_to_acceptance = state.get("current_round", turn_count)
                             sentiment_trajectory.append(SentimentLabel.EXCITED)
                         else:
                             log.rejection_reasons.append(user_response)
@@ -176,7 +218,7 @@ with col2:
                         with thought_container:
                             st.markdown(f"**Match {'✅ ACCEPTED' if accepted else '❌ REJECTED'}**")
                     
-                    elif ditto.phase == ConversationPhase.POST_DATE_FEEDBACK:
+                    elif current_phase == "post_date_feedback":
                         feedback_response, rating = customer.give_post_date_feedback(ditto_response)
                         user_response = feedback_response
                         post_date_rating = rating
@@ -208,7 +250,7 @@ with col2:
             # ── Finalize & Persist ──
             log.turns = turns_log
             log.sentiment_trajectory = sentiment_trajectory
-            log.total_rounds = getattr(ditto, 'current_round', turn_count)
+            log.total_rounds = state.get("current_round", turn_count)
             if post_date_rating is not None:
                 log.post_date_rating = post_date_rating
             if post_date_feedback_text is not None:
@@ -223,7 +265,7 @@ with col2:
                     st.error(f"Failed to sync conversation: {e}")
             
             # Final status
-            if ditto.is_complete:
+            if state.get("phase", "") == "completed":
                 with chat_container:
                     st.success("🎉 Conversation completed successfully!")
             elif turn_count >= max_turns:

@@ -7,7 +7,7 @@ A multi-agent simulation system that generates synthetic matchmaking conversatio
 ```
 ┌───────────────────────────────────────────────────┐
 │          Interactive Streamlit UI (app.py)        │
-│👤 Persona Studio│💬Simulation Arena│📊 Analytics │
+│👤 Persona Studio│ 💬Simulation Arena│ 📊 Analytics │
 └──────────────────────┬────────────────────────────┘
                        │
 ┌──────────────────────▼────────────────────────────┐
@@ -42,6 +42,131 @@ A multi-agent simulation system that generates synthetic matchmaking conversatio
  └──────────────────────────────────────────────────┘
 ```
 
+## LangGraph Architecture
+
+The Ditto Bot conversation is now orchestrated by a **LangGraph `StateGraph`** defined in `src/ditto_bot/graph.py`. Instead of a monolithic phase-driven loop, each matchmaking step is a discrete node in a compiled graph. The `SimulationEngine` invokes the graph once per turn, passing the current `DittoState`; LangGraph's conditional edges handle all phase transitions automatically.
+
+### Graph Topology
+
+```mermaid
+flowchart TD
+    START([START]) -->|route_after_user_response| greeting
+    START -->|route_after_user_response| collect_preferences
+    START -->|route_after_user_response| date_proposal
+    START -->|route_after_user_response| handle_rejection
+    START -->|route_after_user_response| collect_feedback
+    START -->|completed / max_rounds| END_ENTRY([END])
+
+    greeting --> END1([END])
+    collect_preferences --> END2([END])
+
+    handle_rejection --> score_matches
+    score_matches -->|route_after_scoring: match found| present_match
+    score_matches -->|route_after_scoring: no candidates| END3([END])
+    present_match --> END4([END])
+
+    date_proposal --> END5([END])
+    collect_feedback --> END6([END])
+```
+
+**Linear happy path:**
+```
+START → greeting → END
+      → collect_preferences → END
+      → score_matches → present_match → END
+      → date_proposal → END
+      → collect_feedback → END
+```
+
+**Rejection loop (up to `max_rounds`):**
+```
+START → handle_rejection → score_matches → present_match → END
+                                        ↘ END  (no candidates left)
+```
+
+**Max rounds reached:**
+```
+START → END  (route_after_user_response returns "completed")
+```
+
+### Node Functions
+
+| Node | Function | Responsibility |
+|------|----------|----------------|
+| 1 | `greeting_node` | Generates the opening greeting and transitions phase to `collecting_preferences` |
+| 2 | `collect_preferences_node` | Collects user preferences conversationally; transitions to `presenting_match` after ≥ 2 user turns |
+| 3 | `score_matches_node` | Runs `MatchScorer` (embedding + LLM CoT) to rank candidates and selects the top result |
+| 4 | `present_match_node` | Formats and presents the current match to the user using `MATCH_PRESENTATION_PROMPT` |
+| 5 | `handle_rejection_node` | Acknowledges the rejection, extracts the reason, and appends it to `rejection_reasons` |
+| 6 | `date_proposal_node` | Proposes a date for the accepted match using `DATE_PROPOSAL_PROMPT` and sets `accepted_match` |
+| 7 | `collect_feedback_node` | Requests post-date feedback and marks the conversation phase as `completed` |
+
+### `DittoState` Schema
+
+`DittoState` is a `TypedDict` (defined in `src/ditto_bot/graph.py`) that serves as the shared state passed between all graph nodes. Every node reads from it and returns a partial dict update.
+
+| Field | Type | Tracks |
+|-------|------|--------|
+| `messages` | `Annotated[list[BaseMessage], add_messages]` | Full conversation history; new messages are **appended** automatically via the `add_messages` reducer |
+| `phase` | `str` | Current conversation phase (e.g. `"greeting"`, `"collecting_preferences"`, `"presenting_match"`, `"post_date_feedback"`, `"completed"`) |
+| `user_persona` | `dict` | The active user's `Persona` serialized as a plain dict |
+| `persona_pool` | `list[dict]` | All available candidate personas (serialized dicts) for match scoring |
+| `user_preferences` | `list[str]` | Accumulated preference statements extracted from user messages |
+| `rejection_reasons` | `list[str]` | Reasons given for each rejected match (used to improve subsequent scoring) |
+| `shown_match_ids` | `list[str]` | IDs of candidates already presented (prevents re-presenting the same match) |
+| `current_match` | `dict \| None` | The top-scored `MatchResult` for the current round, serialized as a dict |
+| `accepted_match` | `dict \| None` | The match the user accepted (set by `date_proposal_node`); `None` until acceptance |
+| `current_round` | `int` | Number of match rounds completed so far |
+| `max_rounds` | `int` | Maximum allowed match rounds before the conversation ends (default: `6`) |
+| `llm_model` | `str` | Ollama model name used for conversational LLM calls (e.g. `"llama3.2"`) |
+| `embedding_model` | `str` | Ollama model name used for embeddings (e.g. `"nomic-embed-text"`) |
+
+### Unchanged Components
+
+The LangGraph integration is a **drop-in orchestration layer** — the following components are **unchanged**:
+
+- **`CustomerBot`** (`src/customer_bot/agent.py`) — persona-driven user simulation with frustration model, ghosting, and noise injection
+- **`MatchScorer`** (`src/ditto_bot/matcher.py`) — hybrid 40% embedding + 60% LLM chain-of-thought scoring
+- **Prompt templates** (`src/ditto_bot/prompts.py`) — all 5 prompts (`DITTO_SYSTEM_PROMPT`, `MATCH_PRESENTATION_PROMPT`, `REJECTION_HANDLING_PROMPT`, `DATE_PROPOSAL_PROMPT`, `POST_DATE_FEEDBACK_PROMPT`)
+- **Pydantic models** (`src/models/persona.py`, `src/models/conversation.py`) — `Persona`, `DatingPreferences`, `ConversationLog`, `Turn`, `MatchPresented`, etc.
+
+## Bug Fixes & Resilience (Issue #3)
+
+### Graph Routing Fix
+- The `collect_preferences` node now **conditionally chains to `score_matches → present_match`** when preferences are complete, instead of routing directly to `date_proposal`.
+- Prevents premature phase transitions where a match had not yet been scored or presented before a date was proposed.
+
+### Acceptance Signal Hardening
+- The router now **requires `current_match` to be non-`None`** before interpreting a user message as match acceptance.
+- Overly common casual words (e.g. "yes", "ok", "sure") have been removed from the acceptance signal list to avoid false positives during general conversation.
+
+### Embedding Fallback
+- `MatchScorer` now **gracefully falls back to LLM-only scoring (100% weight)** when the `nomic-embed-text` embedding model is unavailable (e.g. not pulled or Ollama unreachable).
+- A warning is logged when the fallback is active; hybrid scoring resumes automatically once the model is available.
+- To enable full hybrid scoring, run: `ollama pull nomic-embed-text`
+
+### Partial Conversation Logging
+- Conversations that **crash or are interrupted mid-way** now persist their accumulated turns to JSONL (and MongoDB, if enabled) with `dropped_off=True`.
+- Prevents data loss from partial runs and ensures all conversation data — even incomplete — is available for analytics.
+
+## Bug Fixes (Issue #4)
+
+### Embedding Auto-Pull
+
+- `MatchScorer` (`src/ditto_bot/matcher.py`) now **automatically pulls `nomic-embed-text` on first use** if the model is not available locally, using a lazy-on-first-call approach.
+- This enables true hybrid scoring (40% embedding + 60% LLM) without any manual `ollama pull nomic-embed-text` step — the model is fetched transparently the first time an embedding is requested.
+- If the auto-pull fails (e.g. no internet connection), the scorer falls back to LLM-only scoring and logs a warning, preserving the resilience behaviour from Issue #3.
+
+### Conversation Termination Fix
+
+- Conversations now **gracefully terminate when the candidate pool is exhausted** (all available matches have been shown or filtered out by hard constraints), preventing infinite loops that previously occurred when `score_matches_node` found no remaining candidates.
+- A **two-layer defence** is in place: a node-level guard in `score_matches_node` sets `phase = "completed"` immediately when no candidates remain, and a router-level guard in the conditional edge router (`route_after_scoring`) routes to `END` whenever `current_match` is `None` after scoring.
+- This ensures the conversation ends cleanly regardless of which layer catches the exhausted pool first.
+
+## v0.1.1 — Dependency Management Fix
+
+All runtime dependencies previously listed only in `requirements.txt` have been synced into `pyproject.toml` under `[project.dependencies]`, ensuring that `uv sync` installs everything needed to run the project without any missing-package errors. `pyproject.toml` is now the **source of truth** for `uv`-based workflows — use `uv sync` (or `uv pip install -e .`) to set up a fully reproducible environment. `requirements.txt` is retained for **backward compatibility** with `pip`-based workflows (e.g. `pip install -r requirements.txt`) and CI pipelines that do not yet use `uv`.
+
 ## Tech Stack
 
 | Component | Technology |
@@ -55,6 +180,8 @@ A multi-agent simulation system that generates synthetic matchmaking conversatio
 | Data Persistence | JSONL & MongoDB (pymongo) |
 | Interactive UI | Streamlit (multi-page app) |
 | Visualization | Plotly + Pandas |
+| Conversation Graph | LangGraph (StateGraph) |
+| LLM Abstractions | LangChain (langchain-core, langchain-ollama) |
 
 ## Quick Start
 
@@ -63,6 +190,8 @@ A multi-agent simulation system that generates synthetic matchmaking conversatio
 ```bash
 pip install -r requirements.txt
 ```
+
+> **Note:** `requirements.txt` includes `langgraph`, `langchain-core`, and `langchain-ollama` for the LangGraph integration. No additional setup steps are required beyond the standard install.
 
 ### 2. Set Up Environment
 
@@ -162,6 +291,8 @@ Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
 │   ├── persona_generator/
 │   │   └── generator.py            # Appending persona generation with diversity checks
 │   ├── ditto_bot/
+│   │   ├── graph.py                # LangGraph StateGraph definition (DittoState + build_ditto_graph)
+│   │   ├── nodes.py                # 7 LangGraph node functions (greeting, scoring, etc.)
 │   │   ├── agent.py                # Stateful matchmaking agent (phase-driven)
 │   │   ├── matcher.py              # Hybrid match scorer (embedding + LLM CoT)
 │   │   └── prompts.py              # System prompts
@@ -175,6 +306,7 @@ Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
 │       └── mongo_client.py         # MongoDB persistence and analytics layer
 │
 ├── tests/                          # Pytest test suite (41 tests, mongomock)
+│   ├── test_langgraph_integration.py
 │   ├── test_matcher.py
 │   ├── test_models.py
 │   ├── test_mongo.py
