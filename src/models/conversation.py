@@ -20,7 +20,7 @@ class SentimentLabel(str, Enum):
 
 
 class TurnRole(str, Enum):
-    DITTO = "ditto"
+    MATCHMAKER = "matchmaker"
     USER = "user"
 
 

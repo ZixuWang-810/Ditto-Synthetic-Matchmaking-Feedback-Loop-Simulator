@@ -1,6 +1,6 @@
-# Ditto Synthetic Matchmaking Feedback Loop Simulator
+# AI Matchmaking Feedback Loop Simulator
 
-A multi-agent simulation system that generates synthetic matchmaking conversations, mimicking Ditto AI's college dating platform. The system bootstraps a feedback loop by simulating realistic interactions between a matchmaking bot and persona-driven user bots.
+A multi-agent simulation system that generates synthetic matchmaking conversations, mimicking an AI college dating platform. The system bootstraps a feedback loop by simulating realistic interactions between a matchmaking bot and persona-driven user bots.
 
 ## Architecture
 
@@ -16,7 +16,7 @@ A multi-agent simulation system that generates synthetic matchmaking conversatio
 ├───────────────────────────────────────────────────┤
 │                                                   │
 │  ┌──────────────────┐    ┌──────────────────────┐ │
-│  │    Ditto Bot     │◄──►│   Customer Bot       │ │
+│  │    Matchmaker Bot     │◄──►│   Customer Bot       │ │
 │  │  (Matchmaker)    │    │  (Persona-driven)    │ │
 │  │                  │    │                      │ │
 │  │ • Match scoring  │    │ • Naturalistic chat  │ │
@@ -44,7 +44,7 @@ A multi-agent simulation system that generates synthetic matchmaking conversatio
 
 ## LangGraph Architecture
 
-The Ditto Bot conversation is now orchestrated by a **LangGraph `StateGraph`** defined in `src/ditto_bot/graph.py`. Instead of a monolithic phase-driven loop, each matchmaking step is a discrete node in a compiled graph. The `SimulationEngine` invokes the graph once per turn, passing the current `DittoState`; LangGraph's conditional edges handle all phase transitions automatically.
+The Matchmaker Bot conversation is now orchestrated by a **LangGraph `StateGraph`** defined in `src/ai_match_bot/graph.py`. Instead of a monolithic phase-driven loop, each matchmaking step is a discrete node in a compiled graph. The `SimulationEngine` invokes the graph once per turn, passing the current `MatchState`; LangGraph's conditional edges handle all phase transitions automatically.
 
 ### Graph Topology
 
@@ -101,9 +101,9 @@ START → END  (route_after_user_response returns "completed")
 | 6 | `date_proposal_node` | Proposes a date for the accepted match using `DATE_PROPOSAL_PROMPT` and sets `accepted_match` |
 | 7 | `collect_feedback_node` | Requests post-date feedback and marks the conversation phase as `completed` |
 
-### `DittoState` Schema
+### `MatchState` Schema
 
-`DittoState` is a `TypedDict` (defined in `src/ditto_bot/graph.py`) that serves as the shared state passed between all graph nodes. Every node reads from it and returns a partial dict update.
+`MatchState` is a `TypedDict` (defined in `src/ai_match_bot/graph.py`) that serves as the shared state passed between all graph nodes. Every node reads from it and returns a partial dict update.
 
 | Field | Type | Tracks |
 |-------|------|--------|
@@ -126,8 +126,8 @@ START → END  (route_after_user_response returns "completed")
 The LangGraph integration is a **drop-in orchestration layer** — the following components are **unchanged**:
 
 - **`CustomerBot`** (`src/customer_bot/agent.py`) — persona-driven user simulation with frustration model, ghosting, and noise injection
-- **`MatchScorer`** (`src/ditto_bot/matcher.py`) — hybrid 40% embedding + 60% LLM chain-of-thought scoring
-- **Prompt templates** (`src/ditto_bot/prompts.py`) — all 5 prompts (`DITTO_SYSTEM_PROMPT`, `MATCH_PRESENTATION_PROMPT`, `REJECTION_HANDLING_PROMPT`, `DATE_PROPOSAL_PROMPT`, `POST_DATE_FEEDBACK_PROMPT`)
+- **`MatchScorer`** (`src/ai_match_bot/matcher.py`) — hybrid 40% embedding + 60% LLM chain-of-thought scoring
+- **Prompt templates** (`src/ai_match_bot/prompts.py`) — all 5 prompts (`AI_MATCH_SYSTEM_PROMPT`, `MATCH_PRESENTATION_PROMPT`, `REJECTION_HANDLING_PROMPT`, `DATE_PROPOSAL_PROMPT`, `POST_DATE_FEEDBACK_PROMPT`)
 - **Pydantic models** (`src/models/persona.py`, `src/models/conversation.py`) — `Persona`, `DatingPreferences`, `ConversationLog`, `Turn`, `MatchPresented`, etc.
 
 ## LLM Output Resilience
@@ -140,7 +140,7 @@ To keep simulations running without manual intervention, the pipeline uses a **3
 
 - **Layer 2 — Retry with nudge**: If the repaired output still fails to parse, the LLM call is retried once with a corrective prompt that explicitly instructs the model to return only valid JSON, at a lower temperature to reduce creativity-induced noise.
 
-- **Layer 3 — Neutral fallback in `src/ditto_bot/matcher.py`**: If both the repair and the retry fail, `MatchScorer` returns a neutral `CompatibilityScore(score=0.5)` rather than raising an exception. The simulation continues uninterrupted; no conversation is lost to a transient parsing error.
+- **Layer 3 — Neutral fallback in `src/ai_match_bot/matcher.py`**: If both the repair and the retry fail, `MatchScorer` returns a neutral `CompatibilityScore(score=0.5)` rather than raising an exception. The simulation continues uninterrupted; no conversation is lost to a transient parsing error.
 
 ### Observability
 
@@ -169,7 +169,7 @@ All repair, retry, and fallback events are logged at `WARNING` level so they are
 
 ### Embedding Auto-Pull
 
-- `MatchScorer` (`src/ditto_bot/matcher.py`) now **automatically pulls `nomic-embed-text` on first use** if the model is not available locally, using a lazy-on-first-call approach.
+- `MatchScorer` (`src/ai_match_bot/matcher.py`) now **automatically pulls `nomic-embed-text` on first use** if the model is not available locally, using a lazy-on-first-call approach.
 - This enables true hybrid scoring (40% embedding + 60% LLM) without any manual `ollama pull nomic-embed-text` step — the model is fetched transparently the first time an embedding is requested.
 - If the auto-pull fails (e.g. no internet connection), the scorer falls back to LLM-only scoring and logs a warning, preserving the resilience behaviour from Issue #3.
 
@@ -216,7 +216,7 @@ Create a `.env` file in the project root:
 # Optional: Set to true to always sync data to MongoDB by default
 MONGODB_ENABLED=false
 MONGODB_URI=mongodb://localhost:27017
-MONGODB_DB_NAME=ditto_simulator
+MONGODB_DB_NAME=ai_matchmaking_simulator
 
 # To use Gemini instead of Ollama (optional)
 # GEMINI_API_KEY=your_key_here
@@ -240,7 +240,7 @@ streamlit run app.py
 
 The app runs at `http://localhost:8501` with three pages:
 - **👤 Persona Studio** — Generate personas, view the gallery, inspect raw profiles
-- **💬 Simulation Arena** — Select a persona (or 🎲 random), watch live DittoBot ↔ CustomerBot chat, auto-sync results to MongoDB
+- **💬 Simulation Arena** — Select a persona (or 🎲 random), watch live AIMatchBot ↔ CustomerBot chat, auto-sync results to MongoDB
 - **📊 Analytics** — View acceptance rates, rating distributions, and rejection analytics from MongoDB
 
 ### 5. CLI: Generate Personas
@@ -256,7 +256,7 @@ python main.py generate-personas --count 20 --mongo
 
 ### 6. CLI: Run Simulation
 
-Simulate full matchmaking conversations between Ditto and the generated personas.
+Simulate full matchmaking conversations between the Matchmaker and the generated personas.
 
 ```bash
 # Small test run (5 conversations)
@@ -285,7 +285,7 @@ python main.py validate data/conversations/conversations_*.jsonl
 ## Project Structure
 
 ```
-Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
+AI-Matchmaking-Feedback-Loop-Simulator/
 │
 ├── app.py                          # Streamlit entry point (Control Center)
 │
@@ -306,8 +306,8 @@ Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
 │   │   └── client.py               # Local-first LLM client (Ollama / Gemini)
 │   ├── persona_generator/
 │   │   └── generator.py            # Appending persona generation with diversity checks
-│   ├── ditto_bot/
-│   │   ├── graph.py                # LangGraph StateGraph definition (DittoState + build_ditto_graph)
+│   ├── ai_match_bot/
+│   │   ├── graph.py                # LangGraph StateGraph definition (MatchState + build_match_graph)
 │   │   ├── nodes.py                # 7 LangGraph node functions (greeting, scoring, etc.)
 │   │   ├── agent.py                # Stateful matchmaking agent (phase-driven)
 │   │   ├── matcher.py              # Hybrid match scorer (embedding + LLM CoT)
@@ -341,7 +341,7 @@ Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
   "conversation_id": "uuid",
   "persona": { "name": "...", "age": 21, ... },
   "turns": [
-    { "role": "ditto|user", "content": "..." }
+    { "role": "matchmaker|user", "content": "..." }
   ],
   "matches_presented": [
     { "match_id": "...", "round": 1, "accepted": true }

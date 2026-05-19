@@ -1,5 +1,5 @@
 [project]
-name = "Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator"
+name = "AI-Matchmaking-Feedback-Loop-Simulator"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [

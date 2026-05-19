@@ -21,7 +21,7 @@ def mongo():
     client = mongomock.MongoClient()
     storage = MongoStorage()
     storage._client = client
-    storage._db = client["test_ditto"]
+    storage._db = client["test_ai_matchmaking"]
     storage._ensure_indexes()
     yield storage
     client.close()
@@ -61,7 +61,7 @@ def sample_conversation(sample_persona):
     return ConversationLog(
         persona=sample_persona,
         turns=[
-            Turn(role=TurnRole.DITTO, content="Hey there!"),
+            Turn(role=TurnRole.MATCHMAKER, content="Hey there!"),
             Turn(role=TurnRole.USER, content="Hi!"),
         ],
         sentiment_trajectory=[SentimentLabel.NEUTRAL, SentimentLabel.SATISFIED],
@@ -151,7 +151,7 @@ class TestMongoConversations:
             conv = ConversationLog(
                 conversation_id=f"test-conv-{i}",
                 persona=sample_persona,
-                turns=[Turn(role=TurnRole.DITTO, content=f"Message {i}")],
+                turns=[Turn(role=TurnRole.MATCHMAKER, content=f"Message {i}")],
                 total_rounds=1,
             )
             result = mongo.insert_conversation(conv)
@@ -191,7 +191,7 @@ class TestMongoAnalytics:
     def test_rejection_stats(self, mongo, sample_persona):
         conv = ConversationLog(
             persona=sample_persona,
-            turns=[Turn(role=TurnRole.DITTO, content="Hi")],
+            turns=[Turn(role=TurnRole.MATCHMAKER, content="Hi")],
             rejection_reasons=["Not my type", "Too far away", "Not my type"],
             total_rounds=2,
         )

@@ -16,7 +16,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from src.llm.client import repair_json
-from src.ditto_bot.matcher import CompatibilityScore, MatchScorer
+from src.ai_match_bot.matcher import CompatibilityScore, MatchScorer
 from src.models.persona import (
     Persona,
     DatingPreferences,

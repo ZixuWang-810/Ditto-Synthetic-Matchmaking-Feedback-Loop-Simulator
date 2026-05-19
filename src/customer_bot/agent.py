@@ -28,7 +28,7 @@ class CustomerBot:
     - Can ghost or drop off based on frustration/preference strictness
     - Provides post-date ratings calibrated to match quality
     
-    Critical: This bot has NO access to Ditto Bot's internal scoring logic.
+    Critical: This bot has NO access to the Matchmaker Bot's internal scoring logic.
     All decisions are based on the persona's preferences and the match profile
     as presented in natural language.
     """
@@ -60,8 +60,8 @@ class CustomerBot:
 
         )
 
-    def respond(self, ditto_message: str) -> str:
-        """Generate a response to a Ditto Bot message.
+    def respond(self, matchmaker_message: str) -> str:
+        """Generate a response to a Matchmaker Bot message.
         
         May inject noise, ghost, or respond normally based on persona and state.
         """
@@ -77,7 +77,7 @@ class CustomerBot:
             return noise
 
         # Normal response
-        self.conversation_history.append({"role": "user", "content": ditto_message})
+        self.conversation_history.append({"role": "user", "content": matchmaker_message})
 
         response = self.client.chat(
             messages=self.conversation_history,
@@ -88,18 +88,18 @@ class CustomerBot:
         self.conversation_history.append({"role": "assistant", "content": response})
         return response
 
-    def evaluate_match(self, ditto_message: str) -> str:
-        """Evaluate a match presented by Ditto and respond with accept/reject.
+    def evaluate_match(self, matchmaker_message: str) -> str:
+        """Evaluate a match presented by the Matchmaker and respond with accept/reject.
         
         Decision is based on the persona's preferences and the match description.
         The bot does NOT have access to any scoring data — only the natural-language
-        match presentation from Ditto.
+        match presentation from the Matchmaker.
         """
         self.rounds_seen += 1
 
         prompt = (
-            f"Ditto just presented you with a match. Here's what they said:\n\n"
-            f'"{ditto_message}"\n\n'
+            f"The Matchmaker just presented you with a match. Here's what they said:\n\n"
+            f'"{matchmaker_message}"\n\n'
             f"Based on YOUR preferences and personality, decide:\n"
             f"1. Are you interested in this person? Why or why not?\n"
             f"2. If not interested, what specifically doesn't work for you?\n\n"
@@ -143,15 +143,15 @@ class CustomerBot:
 
         return response
 
-    def give_post_date_feedback(self, ditto_message: str) -> tuple[str, int]:
+    def give_post_date_feedback(self, matchmaker_message: str) -> tuple[str, int]:
         """Generate post-date feedback including a rating 1-5.
         
         Returns:
             Tuple of (feedback_message, rating)
         """
         prompt = (
-            f"Ditto is asking about your date:\n\n"
-            f'"{ditto_message}"\n\n'
+            f"The Matchmaker is asking about your date:\n\n"
+            f'"{matchmaker_message}"\n\n'
             f"You went on the date. Think about whether the match actually worked "
             f"for you based on your personality and preferences.\n\n"
             f"In your response:\n"

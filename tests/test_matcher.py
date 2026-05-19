@@ -5,7 +5,7 @@ from src.models.persona import (
     Persona, DatingPreferences, Gender, DateType, DegreeLevel,
     CommunicationStyle, PreferenceStrictness,
 )
-from src.ditto_bot.matcher import MatchScorer
+from src.ai_match_bot.matcher import MatchScorer
 
 
 @pytest.fixture

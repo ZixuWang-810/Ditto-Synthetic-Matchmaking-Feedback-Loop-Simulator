@@ -38,9 +38,9 @@ def sample_conversation_log(sample_persona):
     return ConversationLog(
         persona=sample_persona,
         turns=[
-            Turn(role=TurnRole.DITTO, content="Hey there! Welcome to Ditto 💛"),
+            Turn(role=TurnRole.MATCHMAKER, content="Hey there! Welcome to AI Matchmaker 💛"),
             Turn(role=TurnRole.USER, content="Hi! I'm looking for someone fun"),
-            Turn(role=TurnRole.DITTO, content="I found someone great for you!"),
+            Turn(role=TurnRole.MATCHMAKER, content="I found someone great for you!"),
             Turn(role=TurnRole.USER, content="Sure, sounds good!"),
         ],
         matches_presented=[
@@ -100,7 +100,7 @@ class TestConversationLogger:
             assert field in data, f"Missing required field: {field}"
 
         # Verify turn structure
-        assert data["turns"][0]["role"] in ("ditto", "user")
+        assert data["turns"][0]["role"] in ("matchmaker", "user")
         assert "content" in data["turns"][0]
 
         # Verify match structure

@@ -1,6 +1,6 @@
-"""LangGraph node functions replicating DittoBot's phase logic.
+"""LangGraph node functions replicating AIMatchBot's phase logic.
 
-Each node takes a ``DittoState`` and returns a partial state dict update.
+Each node takes a ``MatchState`` and returns a partial state dict update.
 All LLM calls use the raw ``LLMClient`` (not ChatOllama) and wrap responses
 in ``AIMessage`` for LangGraph state compatibility.
 """
@@ -13,11 +13,11 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage
 
 from src import config
-from src.ditto_bot.graph import DittoState
-from src.ditto_bot.matcher import MatchScorer
-from src.ditto_bot.prompts import (
+from src.ai_match_bot.graph import MatchState
+from src.ai_match_bot.matcher import MatchScorer
+from src.ai_match_bot.prompts import (
     DATE_PROPOSAL_PROMPT,
-    DITTO_SYSTEM_PROMPT,
+    AI_MATCH_SYSTEM_PROMPT,
     MATCH_PRESENTATION_PROMPT,
     POST_DATE_FEEDBACK_PROMPT,
     REJECTION_HANDLING_PROMPT,
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _make_client(state: DittoState) -> LLMClient:
+def _make_client(state: MatchState) -> LLMClient:
     """Instantiate an LLMClient using the model stored in state."""
     return LLMClient(model=state["llm_model"], embedding_model=state["embedding_model"])
 
@@ -55,7 +55,7 @@ def _messages_to_history(messages) -> list[dict[str, str]]:
     return history
 
 
-def _last_user_message(state: DittoState) -> str:
+def _last_user_message(state: MatchState) -> str:
     """Return the content of the most recent HumanMessage in state."""
     for msg in reversed(state["messages"]):
         if isinstance(msg, HumanMessage):
@@ -66,15 +66,15 @@ def _last_user_message(state: DittoState) -> str:
 # ── Node 1: Greeting ──────────────────────────────────────────────────────────
 
 
-def greeting_node(state: DittoState) -> dict[str, Any]:
+def greeting_node(state: MatchState) -> dict[str, Any]:
     """Generate the opening greeting and transition to collecting_preferences.
 
-    Mirrors ``DittoBot.start_conversation`` (agent.py lines ~72-95).
+    Mirrors ``AIMatchBot.start_conversation`` (agent.py lines ~72-95).
     """
     client = _make_client(state)
     user_persona = _persona_from_dict(state["user_persona"])
 
-    system_prompt = DITTO_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
+    system_prompt = AI_MATCH_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
 
     greeting_prompt = (
         f"You are starting a conversation with a new student. "
@@ -100,16 +100,16 @@ def greeting_node(state: DittoState) -> dict[str, Any]:
 # ── Node 2: Collect Preferences ───────────────────────────────────────────────
 
 
-def collect_preferences_node(state: DittoState) -> dict[str, Any]:
+def collect_preferences_node(state: MatchState) -> dict[str, Any]:
     """Collect user preferences and respond conversationally.
 
-    Mirrors ``DittoBot._handle_preference_collection`` (agent.py lines ~121-171).
+    Mirrors ``AIMatchBot._handle_preference_collection`` (agent.py lines ~121-171).
     Appends the latest user message to ``user_preferences``.
     Transitions to ``'presenting_match'`` once at least 2 user messages have
     been exchanged; otherwise stays at ``'collecting_preferences'``.
     """
     client = _make_client(state)
-    system_prompt = DITTO_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
+    system_prompt = AI_MATCH_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
 
     user_message = _last_user_message(state)
 
@@ -157,11 +157,11 @@ def collect_preferences_node(state: DittoState) -> dict[str, Any]:
 # ── Node 3: Score Matches ─────────────────────────────────────────────────────
 
 
-def score_matches_node(state: DittoState) -> dict[str, Any]:
+def score_matches_node(state: MatchState) -> dict[str, Any]:
     """Score and rank candidates; select the top result.
 
     Pure computation node — no conversational LLM call.
-    Mirrors the scoring logic used in ``DittoBot._handle_preference_collection``.
+    Mirrors the scoring logic used in ``AIMatchBot._handle_preference_collection``.
     """
     client = _make_client(state)
     scorer = MatchScorer(llm_client=client)
@@ -208,14 +208,14 @@ def score_matches_node(state: DittoState) -> dict[str, Any]:
 # ── Node 4: Present Match ─────────────────────────────────────────────────────
 
 
-def present_match_node(state: DittoState) -> dict[str, Any]:
+def present_match_node(state: MatchState) -> dict[str, Any]:
     """Format and present the current match to the user.
 
-    Mirrors ``DittoBot._handle_preference_collection`` match-presentation block
-    (agent.py lines ~145-171) and ``DittoBot._present_match`` pattern.
+    Mirrors ``AIMatchBot._handle_preference_collection`` match-presentation block
+    (agent.py lines ~145-171) and ``AIMatchBot._present_match`` pattern.
     """
     client = _make_client(state)
-    system_prompt = DITTO_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
+    system_prompt = AI_MATCH_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
 
     user_persona = _persona_from_dict(state["user_persona"])
 
@@ -224,7 +224,7 @@ def present_match_node(state: DittoState) -> dict[str, Any]:
         # No match available — inform the user gracefully
         response = (
             "I'm so sorry, but I've gone through all viable matches for you right now. "
-            "Check back soon — new people are joining Ditto every day! 🙏"
+            "Check back soon — new people are joining the platform every day! 🙏"
         )
         return {
             "messages": [AIMessage(content=response)],
@@ -271,14 +271,14 @@ def present_match_node(state: DittoState) -> dict[str, Any]:
 # ── Node 5: Handle Rejection ──────────────────────────────────────────────────
 
 
-def handle_rejection_node(state: DittoState) -> dict[str, Any]:
+def handle_rejection_node(state: MatchState) -> dict[str, Any]:
     """Acknowledge the rejection, extract the reason, and prepare for the next match.
 
-    Mirrors ``DittoBot._handle_match_response`` rejection branch and
-    ``DittoBot._handle_rejection_feedback`` (agent.py lines ~173-237).
+    Mirrors ``AIMatchBot._handle_match_response`` rejection branch and
+    ``AIMatchBot._handle_rejection_feedback`` (agent.py lines ~173-237).
     """
     client = _make_client(state)
-    system_prompt = DITTO_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
+    system_prompt = AI_MATCH_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
 
     user_message = _last_user_message(state)
 
@@ -321,13 +321,13 @@ def handle_rejection_node(state: DittoState) -> dict[str, Any]:
 # ── Node 6: Date Proposal ─────────────────────────────────────────────────────
 
 
-def date_proposal_node(state: DittoState) -> dict[str, Any]:
+def date_proposal_node(state: MatchState) -> dict[str, Any]:
     """Propose a date for the accepted match.
 
-    Mirrors ``DittoBot._handle_match_response`` acceptance branch (agent.py ~185-202).
+    Mirrors ``AIMatchBot._handle_match_response`` acceptance branch (agent.py ~185-202).
     """
     client = _make_client(state)
-    system_prompt = DITTO_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
+    system_prompt = AI_MATCH_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
 
     user_persona = _persona_from_dict(state["user_persona"])
 
@@ -374,13 +374,13 @@ def date_proposal_node(state: DittoState) -> dict[str, Any]:
 # ── Node 7: Collect Feedback ──────────────────────────────────────────────────
 
 
-def collect_feedback_node(state: DittoState) -> dict[str, Any]:
+def collect_feedback_node(state: MatchState) -> dict[str, Any]:
     """Ask for post-date feedback and mark the conversation as completed.
 
-    Mirrors ``DittoBot._handle_date_response`` (agent.py lines ~239-255).
+    Mirrors ``AIMatchBot._handle_date_response`` (agent.py lines ~239-255).
     """
     client = _make_client(state)
-    system_prompt = DITTO_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
+    system_prompt = AI_MATCH_SYSTEM_PROMPT.format(max_rounds=state["max_rounds"])
 
     user_message = _last_user_message(state)
 

@@ -1,4 +1,4 @@
-"""Simulation engine — orchestrates multi-turn conversations between Ditto Bot and Customer Bot."""
+"""Simulation engine — orchestrates multi-turn conversations between the Matchmaker Bot and Customer Bot."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from src import config
 from src.llm.client import LLMClient, get_llm_client
-from src.ditto_bot.graph import build_ditto_graph, DittoState
+from src.ai_match_bot.graph import build_match_graph, MatchState
 from src.customer_bot.agent import CustomerBot
 from src.orchestrator.logger import ConversationLogger
 from src.models.persona import Persona
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class SimulationEngine:
-    """Orchestrates conversation simulations between Ditto Bot and Customer Bot pairs.
+    """Orchestrates conversation simulations between the Matchmaker Bot and Customer Bot pairs.
     
     Manages:
     - Pairing personas from the pool for each conversation
@@ -48,7 +48,7 @@ class SimulationEngine:
         self.client = llm_client or get_llm_client()
         self.logger = ConversationLogger(output_dir=output_dir, mongo_enabled=mongo_enabled)
         # Build the compiled LangGraph once and reuse across conversations
-        self._ditto_graph = build_ditto_graph()
+        self._match_graph = build_match_graph()
 
     def run(
         self,
@@ -107,7 +107,7 @@ class SimulationEngine:
         return results
 
     def _run_single_conversation(self, user_persona: Persona) -> ConversationLog:
-        """Run a single conversation between Ditto Bot (LangGraph) and a Customer Bot."""
+        """Run a single conversation between Matchmaker Bot (LangGraph) and a Customer Bot."""
 
         # Initialize CustomerBot — uses the raw LLMClient (unchanged)
         customer = CustomerBot(
@@ -120,8 +120,8 @@ class SimulationEngine:
         turns: list[Turn] = []
         sentiment_trajectory: list[SentimentLabel] = [SentimentLabel.NEUTRAL]
 
-        # ── Build initial DittoState ───────────────────────────────────────────
-        state: DittoState = {
+        # ── Build initial MatchState ───────────────────────────────────────────
+        state: MatchState = {
             "messages": [],
             "user_persona": user_persona.model_dump(),
             "persona_pool": [p.model_dump() for p in self.persona_pool],
@@ -139,12 +139,12 @@ class SimulationEngine:
 
         try:
             # ── Phase 1: Invoke graph to get the greeting ─────────────────────────
-            state = self._ditto_graph.invoke(state)
+            state = self._match_graph.invoke(state)
 
             # Extract the AI greeting from the last message
             greeting = self._extract_last_ai_message(state)
-            turns.append(Turn(role=TurnRole.DITTO, content=greeting))
-            logger.info(f"  [Ditto] {greeting[:100]}...")
+            turns.append(Turn(role=TurnRole.MATCHMAKER, content=greeting))
+            logger.info(f"  [Matchmaker] {greeting[:100]}...")
 
             # ── Phase 2: Customer responds to greeting ────────────────────────────
             user_response = customer.respond(greeting)
@@ -167,12 +167,12 @@ class SimulationEngine:
 
                 # Add the latest user message to state and invoke the graph
                 state["messages"] = list(state["messages"]) + [HumanMessage(content=user_response)]
-                state = self._ditto_graph.invoke(state)
+                state = self._match_graph.invoke(state)
 
-                # Extract Ditto's response
-                ditto_response = self._extract_last_ai_message(state)
-                turns.append(Turn(role=TurnRole.DITTO, content=ditto_response))
-                logger.info(f"  [Ditto] {ditto_response[:100]}...")
+                # Extract the matchmaker's response
+                match_response = self._extract_last_ai_message(state)
+                turns.append(Turn(role=TurnRole.MATCHMAKER, content=match_response))
+                logger.info(f"  [Matchmaker] {match_response[:100]}...")
 
                 current_phase = state.get("phase", "completed")
 
@@ -196,7 +196,7 @@ class SimulationEngine:
                         log.matches_presented.append(match_presented)
 
                     # Customer evaluates the match
-                    user_response = customer.evaluate_match(ditto_response)
+                    user_response = customer.evaluate_match(match_response)
                     turns.append(Turn(role=TurnRole.USER, content=user_response))
                     logger.info(f"  [{user_persona.name}] {user_response[:100]}...")
 
@@ -220,7 +220,7 @@ class SimulationEngine:
 
                 elif current_phase == "post_date_feedback":
                     # Customer gives post-date feedback
-                    feedback_response, rating = customer.give_post_date_feedback(ditto_response)
+                    feedback_response, rating = customer.give_post_date_feedback(match_response)
                     turns.append(Turn(role=TurnRole.USER, content=feedback_response))
                     logger.info(f"  [{user_persona.name}] {feedback_response[:100]}... (Rating: {rating})")
 
@@ -233,7 +233,7 @@ class SimulationEngine:
 
                 else:
                     # General response (collecting_preferences or other phases)
-                    user_response = customer.respond(ditto_response)
+                    user_response = customer.respond(match_response)
                     turns.append(Turn(role=TurnRole.USER, content=user_response))
                     logger.info(f"  [{user_persona.name}] {user_response[:100]}...")
 
@@ -271,7 +271,7 @@ class SimulationEngine:
             # Re-raise so the caller's except block can count this as a failure
             raise
 
-    def _extract_last_ai_message(self, state: DittoState) -> str:
+    def _extract_last_ai_message(self, state: MatchState) -> str:
         """Extract the content of the most recent AIMessage from graph state."""
         messages = state.get("messages", [])
         for msg in reversed(messages):
