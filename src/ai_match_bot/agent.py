@@ -1,4 +1,4 @@
-"""Ditto Bot — stateful matchmaking conversational agent."""
+"""AIMatchBot — stateful matchmaking conversational agent."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from typing import Optional
 
 from src import config
 from src.llm.client import LLMClient, get_llm_client
-from src.ditto_bot.matcher import MatchScorer, MatchResult
-from src.ditto_bot.prompts import (
-    DITTO_SYSTEM_PROMPT,
+from src.ai_match_bot.matcher import MatchScorer, MatchResult
+from src.ai_match_bot.prompts import (
+    AI_MATCH_SYSTEM_PROMPT,
     MATCH_PRESENTATION_PROMPT,
     REJECTION_HANDLING_PROMPT,
     DATE_PROPOSAL_PROMPT,
@@ -32,8 +32,8 @@ class ConversationPhase(str, Enum):
     COMPLETED = "completed"
 
 
-class DittoBot:
-    """Stateful Ditto matchmaking bot that manages the full conversation flow.
+class AIMatchBot:
+    """Stateful AI matchmaking bot (AIMatchBot) that manages the full conversation flow.
     
     Uses Ollama local models for conversation generation, match scoring,
     and embeddings.
@@ -70,7 +70,7 @@ class DittoBot:
         self._user_persona = user_persona
         self.phase = ConversationPhase.GREETING
 
-        system_prompt = DITTO_SYSTEM_PROMPT.format(
+        system_prompt = AI_MATCH_SYSTEM_PROMPT.format(
             max_rounds=config.MAX_MATCH_ROUNDS
         )
 
@@ -93,7 +93,7 @@ class DittoBot:
         return response
 
     def respond(self, user_message: str) -> str:
-        """Process a user message and return the Ditto bot's response.
+        """Process a user message and return the matchmaker bot's response.
         
         The response depends on the current conversation phase and automatically
         advances the phase based on the conversation state.
@@ -101,7 +101,7 @@ class DittoBot:
         if self._user_persona is None:
             raise RuntimeError("Call start_conversation() first")
 
-        system_prompt = DITTO_SYSTEM_PROMPT.format(
+        system_prompt = AI_MATCH_SYSTEM_PROMPT.format(
             max_rounds=config.MAX_MATCH_ROUNDS
         )
 
@@ -116,7 +116,7 @@ class DittoBot:
         elif self.phase == ConversationPhase.POST_DATE_FEEDBACK:
             return self._handle_post_date(user_message, system_prompt)
         else:
-            return "Thanks for using Ditto! Hope we helped you find a great match 💛"
+            return "Thanks for using AI Matchmaker! Hope we helped you find a great match 💛"
 
     def _handle_preference_collection(self, user_message: str, system_prompt: str) -> str:
         """Collect preferences, then find and present a match."""
@@ -134,7 +134,7 @@ class DittoBot:
             self.phase = ConversationPhase.COMPLETED
             return (
                 "I'm so sorry, but I've gone through all viable matches for you right now. "
-                "Check back soon — new people are joining Ditto every day! 🙏"
+                "Check back soon — new people are joining the platform every day! 🙏"
             )
 
         self.current_match = match_result
@@ -226,7 +226,7 @@ class DittoBot:
             return (
                 "I appreciate your patience! We've gone through our rounds for today. "
                 "I'll keep your preferences on file and find you better matches soon. "
-                "Thanks for giving Ditto a shot! 💛"
+                "Thanks for giving us a shot! 💛"
             )
 
         # Find next match incorporating all rejection feedback

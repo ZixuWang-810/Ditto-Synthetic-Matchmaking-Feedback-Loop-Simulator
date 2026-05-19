@@ -1,4 +1,4 @@
-"""Centralized configuration for the Ditto Synthetic Matchmaking Simulator."""
+"""Centralized configuration for the AI Matchmaking Simulator."""
 
 import os
 from pathlib import Path
@@ -44,5 +44,5 @@ LLM_SCORE_WEIGHT: float = 0.6
 
 # ── MongoDB Settings ──────────────────────────────────────────────────────────
 MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-MONGODB_DB_NAME: str = os.getenv("MONGODB_DB_NAME", "ditto_simulator")
+MONGODB_DB_NAME: str = os.getenv("MONGODB_DB_NAME", "ai_matchmaking_simulator")
 MONGODB_ENABLED: bool = os.getenv("MONGODB_ENABLED", "false").lower() in ("true", "1", "yes")

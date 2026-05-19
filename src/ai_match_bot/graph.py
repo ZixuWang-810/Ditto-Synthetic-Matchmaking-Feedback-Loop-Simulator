@@ -7,9 +7,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 
-from src.ditto_bot.agent import ConversationPhase  # re-exported for node functions
+from src.ai_match_bot.agent import ConversationPhase  # re-exported for node functions
 
-__all__ = ["DittoState", "ConversationPhase", "build_ditto_graph"]
+__all__ = ["MatchState", "ConversationPhase", "build_match_graph"]
 
 # Acceptance signal substrings (case-insensitive).
 # Only intentional acceptance phrases are included — common casual words like
@@ -34,8 +34,8 @@ _ACCEPTANCE_SIGNALS = (
 )
 
 
-class DittoState(TypedDict):
-    """LangGraph state schema for the Ditto matchmaking conversation graph.
+class MatchState(TypedDict):
+    """LangGraph state schema for the AI matchmaking conversation graph.
 
     All nodes read from and write to this shared state dict.  The ``messages``
     field uses the ``add_messages`` reducer so new messages are *appended*
@@ -60,7 +60,7 @@ class DittoState(TypedDict):
 # ── Routing helpers ────────────────────────────────────────────────────────────
 
 
-def _last_user_content(state: DittoState) -> str:
+def _last_user_content(state: MatchState) -> str:
     """Return the content of the most recent HumanMessage in state (lowercased)."""
     for msg in reversed(state["messages"]):
         if isinstance(msg, HumanMessage):
@@ -76,7 +76,7 @@ def _is_acceptance(text: str) -> bool:
 # ── Conditional edge functions ─────────────────────────────────────────────────
 
 
-def route_after_collect_preferences(state: DittoState) -> str:
+def route_after_collect_preferences(state: MatchState) -> str:
     """Conditional edge after collect_preferences_node.
 
     When the node decides preference collection is complete it sets
@@ -87,17 +87,17 @@ def route_after_collect_preferences(state: DittoState) -> str:
 
     If preferences are still being gathered the phase remains
     ``'collecting_preferences'`` and we return ``END`` so the orchestrator can
-    deliver Ditto's follow-up question and wait for the next user message.
+    deliver the matchmaker's follow-up question and wait for the next user message.
     """
     if state.get("phase") == "presenting_match":
         return "score_matches"
     return END
 
 
-def route_after_user_response(state: DittoState) -> str:
+def route_after_user_response(state: MatchState) -> str:
     """Conditional edge called after the Customer Bot responds.
 
-    Reads ``state['phase']`` and the last user message to decide which Ditto
+    Reads ``state['phase']`` and the last user message to decide which matchmaker
     node should handle this turn.
     """
     phase = state.get("phase", "")
@@ -129,12 +129,12 @@ def route_after_user_response(state: DittoState) -> str:
     return "completed"
 
 
-def route_after_rejection(state: DittoState) -> str:
+def route_after_rejection(state: MatchState) -> str:
     """After handle_rejection_node, always re-score to find the next candidate."""
     return "score_matches"
 
 
-def route_after_scoring(state: DittoState) -> str:
+def route_after_scoring(state: MatchState) -> str:
     """After score_matches_node: present the match or end the conversation.
 
     Two termination conditions are checked in priority order:
@@ -165,8 +165,8 @@ def route_after_scoring(state: DittoState) -> str:
 # ── Graph factory ──────────────────────────────────────────────────────────────
 
 
-def build_ditto_graph() -> CompiledStateGraph:
-    """Construct and compile the Ditto matchmaking StateGraph.
+def build_match_graph() -> CompiledStateGraph:
+    """Construct and compile the AI matchmaking StateGraph.
 
     Graph topology
     --------------
@@ -186,10 +186,10 @@ def build_ditto_graph() -> CompiledStateGraph:
 
     All terminal nodes (greeting, present_match, date_proposal, collect_feedback)
     go directly to END so that each orchestrator invocation handles exactly one
-    complete Ditto action.
+    complete matchmaker action.
     """
     # Import node functions here to avoid circular imports at module load time
-    from src.ditto_bot.nodes import (  # noqa: PLC0415
+    from src.ai_match_bot.nodes import (  # noqa: PLC0415
         collect_feedback_node,
         collect_preferences_node,
         date_proposal_node,
@@ -199,7 +199,7 @@ def build_ditto_graph() -> CompiledStateGraph:
         score_matches_node,
     )
 
-    builder = StateGraph(DittoState)
+    builder = StateGraph(MatchState)
 
     # ── Register nodes ─────────────────────────────────────────────────────────
     builder.add_node("greeting", greeting_node)
@@ -212,7 +212,7 @@ def build_ditto_graph() -> CompiledStateGraph:
 
     # ── Entry: conditional dispatch from START ─────────────────────────────────
     # The orchestrator sets state['phase'] before each invocation; the router
-    # decides which node handles this Ditto turn.
+    # decides which node handles this matchmaker turn.
     builder.add_conditional_edges(
         START,
         route_after_user_response,

@@ -18,3 +18,6 @@ data/conversations/
 TMB/
 .tmb/
 bro/
+
+# TMB plugin runtime state — never commit
+.claude/

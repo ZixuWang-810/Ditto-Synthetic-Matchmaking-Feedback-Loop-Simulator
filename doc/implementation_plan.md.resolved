@@ -1,8 +1,8 @@
-# Ditto Synthetic Matchmaking Feedback Loop Simulator — Implementation Plan
+# Synthetic AI Matchmaking Feedback Loop Simulator — Implementation Plan
 
 ## Goal
 
-Implement the core system described in [Synthetic_Conversation_Generator_Project_Roadmap.md](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/doc/Synthetic_Conversation_Generator_Project_Roadmap.md): a multi-agent simulator that generates synthetic matchmaking conversations between a Ditto-style bot and persona-driven user bots, producing structured JSONL logs for future feedback analysis.
+Implement the core system described in [Synthetic_Conversation_Generator_Project_Roadmap.md](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/doc/Synthetic_Conversation_Generator_Project_Roadmap.md): a multi-agent simulator that generates synthetic matchmaking conversations between a AIMatchBot and persona-driven user bots, producing structured JSONL logs for future feedback analysis.
 
 ## User Review Required
 
@@ -22,7 +22,7 @@ Implement the core system described in [Synthetic_Conversation_Generator_Project
 ### Project Structure
 
 ```
-Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
+Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/
 ├── src/
 │   ├── __init__.py
 │   ├── config.py                  # Centralized config, env vars, constants
@@ -37,11 +37,11 @@ Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
 │   ├── persona_generator/
 │   │   ├── __init__.py
 │   │   └── generator.py           # Batch persona generation with structured output
-│   ├── ditto_bot/
+│   ├── ai_match_bot/
 │   │   ├── __init__.py
-│   │   ├── agent.py               # Ditto matchmaking conversational agent
+│   │   ├── agent.py               # AIMatchBot matchmaking conversational agent
 │   │   ├── matcher.py             # Embedding similarity + LLM scorer
-│   │   └── prompts.py             # System prompts for Ditto Bot
+│   │   └── prompts.py             # System prompts for AIMatchBot
 │   ├── customer_bot/
 │   │   ├── __init__.py
 │   │   ├── agent.py               # Persona-driven user bot
@@ -69,23 +69,23 @@ Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
 
 ### Foundation & Core Infrastructure
 
-#### [NEW] [config.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/config.py)
+#### [NEW] [config.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/config.py)
 - Centralized settings via environment variables (API keys, model names, output paths)
 - Constants: max rounds per conversation (6), batch sizes, default persona count (500)
 
-#### [NEW] [persona.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/models/persona.py)
+#### [NEW] [persona.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/models/persona.py)
 - `Persona` Pydantic model with all specified attributes (name, age, gender, ethnicity, height, hobbies, degree_level, date_type, dating_preferences)
 - `DatingPreferences` nested model (who_to_date, preferred_ethnicities, physical_attraction_criteria)
 - JSON-serializable, MongoDB-future-compatible (`id` field, `model_dump()`)
 
-#### [NEW] [conversation.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/models/conversation.py)
+#### [NEW] [conversation.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/models/conversation.py)
 - `Turn`, `MatchPresented`, `ConversationLog` Pydantic models matching the JSONL schema from the roadmap exactly
 
-#### [NEW] [feedback.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/models/feedback.py)
+#### [NEW] [feedback.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/models/feedback.py)
 - `PostDateFeedback` model (rating 1–5, qualitative text)
 - `RejectionFeedback` model (reason, specifics)
 
-#### [NEW] [client.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/llm/client.py)
+#### [NEW] [client.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/llm/client.py)
 - `LLMClient` class wrapping `google-genai` (chat + structured output + embeddings)
 - Provider-swappable via config
 - Token usage tracking for cost monitoring
@@ -94,7 +94,7 @@ Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
 
 ### Persona Generator
 
-#### [NEW] [generator.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/persona_generator/generator.py)
+#### [NEW] [generator.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/persona_generator/generator.py)
 - Batch generation using Gemini structured output (Pydantic response schema)
 - Diversity constraints (gender, ethnicity, date type distribution)
 - Deduplication & validation pass
@@ -102,33 +102,33 @@ Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
 
 ---
 
-### Ditto Bot (Matchmaking Agent)
+### AIMatchBot (Matchmaking Agent)
 
-#### [NEW] [ditto_bot/agent.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/ditto_bot/agent.py)
+#### [NEW] [ai_match_bot/agent.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/ai_match_bot/agent.py)
 - Stateful conversational agent managing the matchmaking flow
 - State: `preference_history`, `rejection_reasons`, `shown_matches`, `current_round`
 - Flow: collect preferences → present match → handle accept/reject → propose date → collect feedback → offer rematch
 
-#### [NEW] [ditto_bot/matcher.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/ditto_bot/matcher.py)
+#### [NEW] [ai_match_bot/matcher.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/ai_match_bot/matcher.py)
 - `MatchScorer` class with hybrid scoring: embedding cosine similarity (0.4 weight) + LLM compatibility reasoning (0.6 weight)
 - Candidate filtering (exclude shown matches, apply hard preferences)
 - Returns top match with natural-language justification
 
-#### [NEW] [ditto_bot/prompts.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/ditto_bot/prompts.py)
-- System prompt for Ditto Bot (friendly, professional matchmaker persona)
+#### [NEW] [ai_match_bot/prompts.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/ai_match_bot/prompts.py)
+- System prompt for AIMatchBot (friendly, professional matchmaker persona)
 - Match presentation template, rejection handling prompt, date proposal prompt
 
 ---
 
 ### Customer Bot (User Bot)
 
-#### [NEW] [customer_bot/agent.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/customer_bot/agent.py)
+#### [NEW] [customer_bot/agent.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/customer_bot/agent.py)
 - Persona-conditioned LLM agent generating naturalistic responses
 - Behavior modes: enthusiastic, cautious, ghosting, contradictory
 - Noise injection: randomly inserts bug reports, casual questions
 - Decision logic: accept/reject match based on persona preferences + randomness
 
-#### [NEW] [customer_bot/prompts.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/customer_bot/prompts.py)
+#### [NEW] [customer_bot/prompts.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/customer_bot/prompts.py)
 - Dynamic system prompt incorporating persona attributes
 - Instruction templates for varied interaction styles
 
@@ -136,20 +136,20 @@ Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
 
 ### Simulation Orchestrator
 
-#### [NEW] [orchestrator/engine.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/orchestrator/engine.py)
-- `SimulationEngine` class managing Ditto ↔ User conversation loops
+#### [NEW] [orchestrator/engine.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/orchestrator/engine.py)
+- `SimulationEngine class managing AIMatchBot ↔ User conversation loops
 - Max 6 match rounds, configurable drop-off probability
 - Async parallel execution with `asyncio.gather` (batch concurrency)
 - Progress tracking, error recovery
 
-#### [NEW] [orchestrator/logger.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/src/orchestrator/logger.py)
+#### [NEW] [orchestrator/logger.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/src/orchestrator/logger.py)
 - `ConversationLogger` writing JSONL files matching the exact schema from the roadmap
 - Real-time append for crash resilience
 
-#### [NEW] [main.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/main.py)
+#### [NEW] [main.py](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/main.py)
 - CLI entry point with `argparse`: `--generate-personas`, `--run-simulation`, `--num-conversations`, `--dry-run`
 
-#### [NEW] [requirements.txt](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/requirements.txt)
+#### [NEW] [requirements.txt](file:///c:/Onedrive/OneDrive%20-%20University%20of%20Southern%20California/Desktop/Job%20Hunting/Synthetic-AI-Matchmaking-Feedback-Loop-Simulator/requirements.txt)
 - `google-genai>=1.64.0`, `pydantic>=2.0`, `python-dotenv`, `numpy`, `pytest`
 
 ---
@@ -160,7 +160,7 @@ Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator/
 
 Run all tests with:
 ```bash
-cd "c:\Onedrive\OneDrive - University of Southern California\Desktop\Job Hunting\Ditto-Synthetic-Matchmaking-Feedback-Loop-Simulator"
+cd "c:\Onedrive\OneDrive - University of Southern California\Desktop\Job Hunting\Synthetic-AI-Matchmaking-Feedback-Loop-Simulator"
 python -m pytest tests/ -v
 ```
 

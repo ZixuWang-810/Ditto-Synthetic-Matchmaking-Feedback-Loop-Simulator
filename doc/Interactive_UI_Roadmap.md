@@ -21,12 +21,12 @@ The application will be divided into three main pages/modules:
     *   **Manual Edit/Override**: Ability to select a generated persona and manually tweak attributes (e.g., change "Height" or add a new "Dealbreaker") before saving it to the database.
 
 #### Page 2: 💬 Simulation Arena (The "Matchmaking Lab")
-*   **Purpose**: Orchestrating and visualizing the conversation between the Ditto Bot and a User Bot.
+*   **Purpose**: Orchestrating and visualizing the conversation between the Matchmaker Bot and a User Bot.
 *   **Key Features**:
     *   **User Selection**: A dropdown to select a specific Persona from the database to act as the "User."
-    *   **Simulation Configurator**: Toggles for injecting specific "Noise" (e.g., "Make user impatient", "Simulate a typo constraint") or selecting which RAG context (Baseline vs. Historical Feedback) the Ditto bot should use.
+    *   **Simulation Configurator**: Toggles for injecting specific "Noise" (e.g., "Make user impatient", "Simulate a typo constraint") or selecting which RAG context (Baseline vs. Historical Feedback) the matchmaker bot should use.
     *   **Live Chat View**: A WhatsApp/iMessage-style chat interface (`st.chat_message`) that updates in real-time as the LangGraph agents exchange messages.
-    *   **"Brain" Inspector (Expandable UI)**: Next to the chat, an accordion view showing the *internal thought process* of the Ditto Bot (e.g., "Checking ChromaDB...", "Calculated Match Score: 0.85", "Decided to propose Match ID: 123").
+    *   **"Brain" Inspector (Expandable UI)**: Next to the chat, an accordion view showing the *internal thought process* of the Matchmaker Bot (e.g., "Checking ChromaDB...", "Calculated Match Score: 0.85", "Decided to propose Match ID: 123").
 
 #### Page 3: 📊 Observability & Analytics (The "Feedback Dashboard")
 *   **Purpose**: Analyzing the results of batch simulations.
@@ -55,9 +55,9 @@ The application will be divided into three main pages/modules:
 
 ### Step 3: The Simulation Arena & Agent Integration
 *   **Tasks**:
-    *   Develop the LangGraph orchestrator linking the Ditto Bot and User Bot.
+    *   Develop the LangGraph orchestrator linking the Matchmaker Bot and User Bot.
     *   Integrate LangGraph execution with Streamlit. *Crucial:* Use Streamlit callbacks or asynchronous generators to stream LangGraph output directly to the UI chat interface so it doesn't just "hang" while computing.
-    *   Build the collapsible "thought process" inspector for the Ditto Bot.
+    *   Build the collapsible "thought process" inspector for the Matchmaker Bot.
 *   **Milestone 3**: A user can select a Persona, click "Start Simulation", and watch the multi-turn chat unfold live on the screen, verifying the logic behind the scenes.
 
 ### Step 4: Batch Execution & Feedback RAG
@@ -65,7 +65,7 @@ The application will be divided into three main pages/modules:
     *   Add a "Batch Mode" to the Simulation Arena to run X interactions in the background (using threading or background tasks) to populate the database for analytics.
     *   Implement the RAG Feedback loop (extracting rejection reasons and querying ChromaDB).
     *   Add UI toggles to switch between "Baseline Bot" and "RAG-Enhanced Bot".
-*   **Milestone 4**: The system can visually demonstrate how historical feedback changes the Ditto Bot's matching behavior in real-time.
+*   **Milestone 4**: The system can visually demonstrate how historical feedback changes the Matchmaker Bot's matching behavior in real-time.
 
 ### Step 5: Analytics Dashboard & Polish
 *   **Tasks**:

@@ -129,12 +129,12 @@ class TestConversationLog:
         log = ConversationLog(
             persona=sample_persona,
             turns=[
-                Turn(role=TurnRole.DITTO, content="Hey there!"),
+                Turn(role=TurnRole.MATCHMAKER, content="Hey there!"),
                 Turn(role=TurnRole.USER, content="Hi!"),
             ],
         )
         assert len(log.turns) == 2
-        assert log.turns[0].role == TurnRole.DITTO
+        assert log.turns[0].role == TurnRole.MATCHMAKER
 
     def test_log_with_matches(self, sample_persona):
         log = ConversationLog(
@@ -155,7 +155,7 @@ class TestConversationLog:
     def test_log_json_roundtrip(self, sample_persona):
         log = ConversationLog(
             persona=sample_persona,
-            turns=[Turn(role=TurnRole.DITTO, content="Hi!")],
+            turns=[Turn(role=TurnRole.MATCHMAKER, content="Hi!")],
             sentiment_trajectory=[SentimentLabel.NEUTRAL, SentimentLabel.SATISFIED],
             rounds_to_acceptance=2,
             post_date_rating=4,

@@ -1,1 +1,1 @@
-# Ditto Synthetic Matchmaking Feedback Loop Simulator
+# AI Matchmaking Feedback Loop Simulator

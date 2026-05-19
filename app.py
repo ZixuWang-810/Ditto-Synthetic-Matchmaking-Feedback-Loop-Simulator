@@ -3,7 +3,7 @@ import os
 
 # Configure the main page properties
 st.set_page_config(
-    page_title="Ditto Sandbox Simulator",
+    page_title="AI Matchmaking Simulator",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -33,7 +33,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Main Dashboard Content
-st.markdown('<div class="main-header">🤖 Ditto Sandbox Simulator</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🤖 AI Matchmaking Simulator</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Control Center for Synthetic Matchmaking & Conversation Generation</div>', unsafe_allow_html=True)
 
 st.write("---")
@@ -55,8 +55,8 @@ with col2:
     st.markdown("""
     ### 💬 Simulation Arena
     Run autonomous, multi-agent matchmaking conversations.
-    * Chat in real-time between Ditto and synthetic users
-    * Inject noise and view Ditto's internal thought process
+    * Chat in real-time between Matchmaker and synthetic users
+    * Inject noise and view the Matchmaker's internal thought process
     * Run batch simulation evaluations
     
     👉 **[Go to Simulation Arena](/Simulation_Arena)**

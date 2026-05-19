@@ -1,4 +1,4 @@
-"""CLI entry point for the Ditto Synthetic Matchmaking Feedback Loop Simulator."""
+"""CLI entry point for the AI Matchmaking Feedback Loop Simulator."""
 
 import argparse
 import logging
@@ -205,7 +205,7 @@ def cmd_mongo_stats(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Ditto Synthetic Matchmaking Feedback Loop Simulator",
+        description="AI Matchmaking Feedback Loop Simulator",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

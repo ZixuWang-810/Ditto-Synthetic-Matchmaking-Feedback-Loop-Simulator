@@ -51,12 +51,12 @@ def _make_persona(name: str = "Alex Chen", gender_val: str = "male"):
 
 
 def test_graph_compiles():
-    """build_ditto_graph() returns a compiled LangGraph StateGraph with all expected nodes."""
+    """build_match_graph() returns a compiled LangGraph StateGraph with all expected nodes."""
     from langgraph.graph.state import CompiledStateGraph
 
-    from src.ditto_bot.graph import build_ditto_graph
+    from src.ai_match_bot.graph import build_match_graph
 
-    graph = build_ditto_graph()
+    graph = build_match_graph()
 
     # Must be a compiled graph object
     assert isinstance(graph, CompiledStateGraph), (
@@ -81,23 +81,23 @@ def test_graph_compiles():
     assert not missing, f"Graph is missing expected nodes: {missing}"
 
 
-# ── Test 2: DittoState schema ─────────────────────────────────────────────────
+# ── Test 2: MatchState schema ─────────────────────────────────────────────────
 
 
 def test_state_schema():
-    """DittoState TypedDict has all required fields and accepts correctly-typed values."""
+    """MatchState TypedDict has all required fields and accepts correctly-typed values."""
     from langchain_core.messages import AIMessage, HumanMessage
 
-    from src.ditto_bot.graph import DittoState
+    from src.ai_match_bot.graph import MatchState
 
     persona = _make_persona()
     persona_dict = persona.model_dump()
 
-    # Build a fully-populated DittoState dict
-    state: DittoState = {
+    # Build a fully-populated MatchState dict
+    state: MatchState = {
         "messages": [
             HumanMessage(content="Hello!"),
-            AIMessage(content="Hi there, welcome to Ditto!"),
+            AIMessage(content="Hi there, welcome to the Matchmaker!"),
         ],
         "phase": "collecting_preferences",
         "user_persona": persona_dict,
@@ -114,7 +114,7 @@ def test_state_schema():
     }
 
     # Verify all annotated fields are present in the state dict
-    annotated_fields = set(typing.get_type_hints(DittoState).keys())
+    annotated_fields = set(typing.get_type_hints(MatchState).keys())
     state_keys = set(state.keys())
 
     missing_fields = annotated_fields - state_keys
@@ -148,7 +148,7 @@ def test_state_schema():
 
 def test_all_nodes_callable():
     """All 7 LangGraph node functions can be imported and are callable."""
-    from src.ditto_bot.nodes import (
+    from src.ai_match_bot.nodes import (
         collect_feedback_node,
         collect_preferences_node,
         date_proposal_node,
@@ -208,15 +208,15 @@ def test_engine_init():
     assert hasattr(engine, "persona_pool"), "Engine missing 'persona_pool' attribute"
     assert len(engine.persona_pool) == 3
 
-    assert hasattr(engine, "_ditto_graph"), "Engine missing '_ditto_graph' attribute"
+    assert hasattr(engine, "_match_graph"), "Engine missing '_match_graph' attribute"
     assert hasattr(engine, "client"), "Engine missing 'client' attribute"
     assert hasattr(engine, "logger"), "Engine missing 'logger' attribute"
 
     # The compiled graph should be present and be a CompiledStateGraph
     from langgraph.graph.state import CompiledStateGraph
 
-    assert isinstance(engine._ditto_graph, CompiledStateGraph), (
-        f"Expected CompiledStateGraph, got {type(engine._ditto_graph)}"
+    assert isinstance(engine._match_graph, CompiledStateGraph), (
+        f"Expected CompiledStateGraph, got {type(engine._match_graph)}"
     )
 
 
@@ -236,13 +236,13 @@ def test_route_after_collect_preferences_transitions_to_score_matches():
     """
     from langgraph.graph import END
 
-    from src.ditto_bot.graph import DittoState, route_after_collect_preferences
+    from src.ai_match_bot.graph import MatchState, route_after_collect_preferences
 
     persona = _make_persona()
     persona_dict = persona.model_dump()
 
     # Simulate state after collect_preferences_node sets phase='presenting_match'
-    state: DittoState = {
+    state: MatchState = {
         "messages": [],
         "phase": "presenting_match",
         "user_persona": persona_dict,
@@ -268,18 +268,18 @@ def test_route_after_collect_preferences_returns_end_when_still_collecting():
     """route_after_collect_preferences returns END when phase='collecting_preferences'.
 
     Regression: When preferences are still being gathered, the graph must
-    return END so the orchestrator can deliver Ditto's follow-up question
+    return END so the orchestrator can deliver the matchmaker's follow-up question
     and wait for the next user message.
     """
     from langgraph.graph import END
 
-    from src.ditto_bot.graph import DittoState, route_after_collect_preferences
+    from src.ai_match_bot.graph import MatchState, route_after_collect_preferences
 
     persona = _make_persona()
     persona_dict = persona.model_dump()
 
     # Simulate state where preferences are still being collected
-    state: DittoState = {
+    state: MatchState = {
         "messages": [],
         "phase": "collecting_preferences",
         "user_persona": persona_dict,
@@ -315,13 +315,13 @@ def test_route_after_user_response_no_current_match_routes_to_score_matches():
     """
     from langchain_core.messages import HumanMessage
 
-    from src.ditto_bot.graph import DittoState, route_after_user_response
+    from src.ai_match_bot.graph import MatchState, route_after_user_response
 
     persona = _make_persona()
     persona_dict = persona.model_dump()
 
     # Acceptance-like message, but current_match is None
-    state: DittoState = {
+    state: MatchState = {
         "messages": [HumanMessage(content="yes sounds great")],
         "phase": "presenting_match",
         "user_persona": persona_dict,
@@ -352,7 +352,7 @@ def test_route_after_user_response_with_current_match_routes_to_date_proposal():
     """
     from langchain_core.messages import HumanMessage
 
-    from src.ditto_bot.graph import DittoState, route_after_user_response
+    from src.ai_match_bot.graph import MatchState, route_after_user_response
 
     user_persona = _make_persona("Alex Chen", "male")
     candidate_persona = _make_persona("Sarah Kim", "female")
@@ -360,7 +360,7 @@ def test_route_after_user_response_with_current_match_routes_to_date_proposal():
     candidate_dict = candidate_persona.model_dump()
 
     # current_match is populated — score_matches has already run
-    state: DittoState = {
+    state: MatchState = {
         "messages": [HumanMessage(content="yes sounds great")],
         "phase": "presenting_match",
         "user_persona": user_dict,
@@ -393,7 +393,7 @@ def test_acceptance_signals_no_false_positives():
     non-acceptance messages (e.g. 'that sounds okay but I'm not sure').
     Only intentional acceptance phrases should remain.
     """
-    from src.ditto_bot.graph import _ACCEPTANCE_SIGNALS
+    from src.ai_match_bot.graph import _ACCEPTANCE_SIGNALS
 
     false_positive_words = ("ok", "okay", "great", "perfect", "awesome")
 
@@ -410,7 +410,7 @@ def test_acceptance_signals_contains_intentional_phrases():
     Sanity check: ensure the tuple wasn't accidentally emptied when removing
     false positives.
     """
-    from src.ditto_bot.graph import _ACCEPTANCE_SIGNALS
+    from src.ai_match_bot.graph import _ACCEPTANCE_SIGNALS
 
     # These are unambiguous acceptance phrases that should remain
     expected_phrases = ("yes", "i accept", "absolutely", "sure")
@@ -436,7 +436,7 @@ def test_match_scorer_embedding_fallback_returns_results():
     """
     from unittest.mock import MagicMock, patch
 
-    from src.ditto_bot.matcher import CompatibilityScore, MatchScorer
+    from src.ai_match_bot.matcher import CompatibilityScore, MatchScorer
     from src.models.persona import (
         CommunicationStyle,
         DateType,
@@ -533,7 +533,7 @@ def test_route_after_scoring_no_candidates():
     current_match=None.  route_after_scoring must detect this and route to
     'completed' (END) rather than 'present_match', preventing an infinite loop.
     """
-    from src.ditto_bot.graph import route_after_scoring
+    from src.ai_match_bot.graph import route_after_scoring
 
     state = {
         "current_match": None,
@@ -556,7 +556,7 @@ def test_route_after_scoring_has_candidate():
     Sanity check: the normal path (match found, rounds remaining) must still
     route to 'present_match'.
     """
-    from src.ditto_bot.graph import route_after_scoring
+    from src.ai_match_bot.graph import route_after_scoring
 
     state = {
         "current_match": {"id": "test", "name": "Test"},
@@ -580,7 +580,7 @@ def test_route_after_scoring_max_rounds_exceeded():
     if a candidate is technically available, preventing the user from seeing
     more matches than the configured limit.
     """
-    from src.ditto_bot.graph import route_after_scoring
+    from src.ai_match_bot.graph import route_after_scoring
 
     state = {
         "current_match": {"id": "test"},
@@ -607,7 +607,7 @@ def test_score_matches_node_empty_pool():
     """
     from unittest.mock import patch
 
-    from src.ditto_bot.nodes import score_matches_node
+    from src.ai_match_bot.nodes import score_matches_node
     from src.models.persona import (
         CommunicationStyle,
         DateType,
@@ -654,7 +654,7 @@ def test_score_matches_node_empty_pool():
     }
 
     with patch(
-        "src.ditto_bot.nodes.MatchScorer.score_candidates",
+        "src.ai_match_bot.nodes.MatchScorer.score_candidates",
         return_value=[],
     ):
         result = score_matches_node(state)

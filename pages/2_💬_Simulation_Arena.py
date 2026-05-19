@@ -3,7 +3,7 @@ import time
 import random
 from src.storage.mongo_client import get_mongo_storage
 from src.llm.client import get_llm_client
-from src.ditto_bot.graph import build_ditto_graph, DittoState
+from src.ai_match_bot.graph import build_match_graph, MatchState
 from src.customer_bot.agent import CustomerBot
 from src.models.conversation import ConversationLog, Turn, TurnRole, MatchPresented, SentimentLabel
 from src import config
@@ -12,7 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 st.set_page_config(page_title="Simulation Arena", page_icon="💬", layout="wide")
 
 st.title("💬 Simulation Arena")
-st.markdown("Watch Ditto try to match a user in real-time. Pick a synthetic persona to simulate the conversation.")
+st.markdown("Watch the Matchmaker try to match a user in real-time. Pick a synthetic persona to simulate the conversation.")
 
 mongo = get_mongo_storage()
 
@@ -68,11 +68,11 @@ with col2:
     
     if start_sim:
         chat_container = st.container(height=500)
-        thought_container = st.expander("🧠 Ditto Thought Process (Phases & Matches)", expanded=True)
+        thought_container = st.expander("🧠 Matchmaker Thought Process (Phases & Matches)", expanded=True)
         
         # Initialize agents using the real APIs
         llm = get_llm_client()
-        ditto_graph = build_ditto_graph()
+        match_graph = build_match_graph()
         customer = CustomerBot(persona=selected_persona, llm_client=llm)
         
         # Initialize conversation log for MongoDB persistence
@@ -82,8 +82,8 @@ with col2:
         post_date_rating = None
         post_date_feedback_text = None
 
-        # ── Build initial DittoState ──────────────────────────────────────────
-        state: DittoState = {
+        # ── Build initial MatchState ──────────────────────────────────────────
+        state: MatchState = {
             "messages": [],
             "user_persona": selected_persona.model_dump(),
             "persona_pool": [p.model_dump() for p in all_personas],
@@ -101,7 +101,7 @@ with col2:
         
         with st.spinner("Initializing Conversation..."):
             # Phase 1: Invoke graph to get the greeting
-            state = ditto_graph.invoke(state)
+            state = match_graph.invoke(state)
 
             # Extract the AI greeting from the last message
             greeting = ""
@@ -110,7 +110,7 @@ with col2:
                     greeting = msg.content
                     break
 
-            turns_log.append(Turn(role=TurnRole.DITTO, content=greeting))
+            turns_log.append(Turn(role=TurnRole.MATCHMAKER, content=greeting))
             
             with chat_container:
                 with st.chat_message("ai", avatar="🤖"):
@@ -147,23 +147,23 @@ with col2:
                 turn_count += 1
                 time.sleep(0.5)
                 
-                with st.spinner(f"Ditto is thinking (Turn {turn_count})..."):
+                with st.spinner(f"Matchmaker is thinking (Turn {turn_count})..."):
                     # Add the latest user message to state and invoke the graph
                     state["messages"] = list(state["messages"]) + [HumanMessage(content=user_response)]
-                    state = ditto_graph.invoke(state)
+                    state = match_graph.invoke(state)
                 
-                # Extract Ditto's response from the last AIMessage
-                ditto_response = ""
+                # Extract the matchmaker's response from the last AIMessage
+                match_response = ""
                 for msg in reversed(state["messages"]):
                     if isinstance(msg, AIMessage):
-                        ditto_response = msg.content
+                        match_response = msg.content
                         break
 
-                turns_log.append(Turn(role=TurnRole.DITTO, content=ditto_response))
+                turns_log.append(Turn(role=TurnRole.MATCHMAKER, content=match_response))
                 
                 with chat_container:
                     with st.chat_message("ai", avatar="🤖"):
-                        st.markdown(ditto_response)
+                        st.markdown(match_response)
                 
                 current_phase = state.get("phase", "completed")
 
@@ -195,7 +195,7 @@ with col2:
                             )
                             log.matches_presented.append(match_presented)
                         
-                        user_response = customer.evaluate_match(ditto_response)
+                        user_response = customer.evaluate_match(match_response)
                         
                         # Check if accepted
                         lower = user_response.lower()
@@ -219,7 +219,7 @@ with col2:
                             st.markdown(f"**Match {'✅ ACCEPTED' if accepted else '❌ REJECTED'}**")
                     
                     elif current_phase == "post_date_feedback":
-                        feedback_response, rating = customer.give_post_date_feedback(ditto_response)
+                        feedback_response, rating = customer.give_post_date_feedback(match_response)
                         user_response = feedback_response
                         post_date_rating = rating
                         post_date_feedback_text = feedback_response
@@ -231,7 +231,7 @@ with col2:
                             st.info(f"**Post-Date Rating:** {rating}/5 ⭐")
                     
                     else:
-                        user_response = customer.respond(ditto_response)
+                        user_response = customer.respond(match_response)
                 
                 turns_log.append(Turn(role=TurnRole.USER, content=user_response))
                 
