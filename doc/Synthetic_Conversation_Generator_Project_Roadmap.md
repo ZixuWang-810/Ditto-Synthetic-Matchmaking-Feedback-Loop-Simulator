@@ -15,7 +15,7 @@ Their matchmaking pipeline includes multiple specialized agents:
 
 ### Core Problem
 
-Ditto needs user feedback data to improve matchmaking quality, but feedback data only accumulates after real deployments.
+This project needs user feedback data to improve matchmaking quality, but feedback data only accumulates after real deployments.
 
 ### Project Goal
 
@@ -69,7 +69,7 @@ Generate a pool of ~500 personas with:
 
 ### 2. Matchmaker Bot (Matchmaking Agent)
 
-Mimics Ditto AI’s real product flow via a conversational LLM agent.
+Mimics a real AI matchmaking product flow via a conversational LLM agent.
 
 #### Responsibilities
 
@@ -150,7 +150,7 @@ Manages conversation simulations between Matchmaker Bot and Customer Bot pairs.
   "conversation_id": "uuid",
   "persona": { ... },
   "turns": [
-    { "role": "ditto|user", "content": "..." }
+    { "role": "matchmaker|user", "content": "..." }
   ],
   "matches_presented": [
     { "match_id": "...", "round": int, "accepted": bool }
@@ -235,8 +235,6 @@ Visualizations:
 ---
 
 ## SKILLS & TOOLS
-# Reference redactedcareers?ashby_jid=f4cbce81-94bf-44cb-a2fc-4dcd001175e1   
-Assume this project is built for preparing an interview for the software engineer intern role in Ditto. Try best to implement skills and tools they required on this page and align with the job description (Make this project similar with what I will do if I get the offer and start to work as a software engineer intern in Ditto).
 
 ### Languages
 
